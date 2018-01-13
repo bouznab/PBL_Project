@@ -1,6 +1,7 @@
 from mininet.net import Mininet
 from mininet.node import Host
 from mininet.cli import CLI
+from mininet.node import RemoteController
 
 net = Mininet()
 
@@ -17,7 +18,7 @@ s2 = net.addSwitch('s2')
 s3 = net.addSwitch('s3')
 s4 = net.addSwitch('s4')
 
-c0 = net.addController('c0')
+c0 = net.addController('c0', controller=RemoteController)
 
 #adding links
 net.addLink(h1, s1)
