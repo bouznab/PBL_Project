@@ -1,9 +1,23 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from time import sleep
 from mininet.net import Mininet
 from mininet.node import Host
 from mininet.cli import CLI
 from mininet.node import RemoteController
 from mininet.link import TCLink
+
+"""
+    H1 ²---² S1 ⁴----------³ S4 ²---² H4
+             ³                ⁴
+             |                |
+             |                |
+             ⁴                ³
+    H2 ²---² S2 ³----------⁴ S3 ²---² H3
+
+    The little numbers are the switch ports.
+    """
 
 net = Mininet(link=TCLink, controller=RemoteController)
 
@@ -36,13 +50,13 @@ c0 = net.addController('c0', port=6633)
 #adding links
 linkopts =  dict(bw=400, delay='0.5ms', loss=0)
 linkopts_reliable = dict(bw=100, delay='5ms', loss=0)
-linkopts_video = dict(bw=200, delay='20ms', loss=0) #FIXME loss=2
-linkopts_latency = dict(bw=300, delay='0.5ms', loss=0) #FIXME  bw=10 and loss=2
+linkopts_video = dict(bw=200, delay='30ms', loss=0) #FIXME loss=2
+linkopts_latency = dict(bw=10, delay='0.5ms', loss=0) #FIXME loss=2
 net.addLink(h1, s1, port1=2, port2=2, **linkopts)
 net.addLink(h2, s2, port1=2, port2=2, **linkopts)
 net.addLink(h3, s3, port1=2, port2=2, **linkopts)
 net.addLink(h4, s4, port1=2, port2=2, **linkopts)
-net.addLink(s1, s2, port1=3, port2=4, **linkopts_latency)
+net.addLink(s1, s2, port1=3, port2=4, **linkopts_video)
 net.addLink(s2, s3, port1=3, port2=4, **linkopts_latency)
 net.addLink(s3, s4, port1=3, port2=4, **linkopts_video)
 net.addLink(s4, s1, port1=3, port2=4, **linkopts_video)
@@ -65,7 +79,7 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.4", mac="10:10:10:10:10:14")
 
 ################################ Change this line so that hardcoded.py can be imported by ryu-manager and adjust the log-file ###########
-result = c0.cmd("bash -c \"ryu-manager hardcoded.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
+result = c0.cmd("bash -c \"ryu-manager slicing.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
 print(result)
 sleep(2)
 
