@@ -4,6 +4,7 @@
 from time import sleep
 from mininet.net import Mininet
 from mininet.node import Host
+from mininet.node import RemoteController
 from mininet.cli import CLI
 from mininet.node import RemoteController
 from mininet.link import TCLink
