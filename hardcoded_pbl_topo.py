@@ -51,13 +51,13 @@ c0 = net.addController('c0', port=6633)
 linkopts =  dict(bw=400, delay='0.5ms', loss=0)
 linkopts_reliable = dict(bw=100, delay='5ms', loss=0)
 linkopts_video = dict(bw=200, delay='30ms', loss=0) #FIXME loss=2
-linkopts_latency = dict(bw=10, delay='0.5ms', loss=0) #FIXME loss=2
+linkopts_latency = dict(bw=0.5, delay='0.5ms', loss=10) #FIXME loss=2
 net.addLink(h1, s1, port1=2, port2=2, **linkopts)
 net.addLink(h2, s2, port1=2, port2=2, **linkopts)
 net.addLink(h3, s3, port1=2, port2=2, **linkopts)
 net.addLink(h4, s4, port1=2, port2=2, **linkopts)
-net.addLink(s1, s2, port1=3, port2=4, **linkopts_video)
-net.addLink(s2, s3, port1=3, port2=4, **linkopts_latency)
+net.addLink(s1, s2, port1=3, port2=4, **linkopts_latency)
+net.addLink(s2, s3, port1=3, port2=4, **linkopts_video)
 net.addLink(s3, s4, port1=3, port2=4, **linkopts_video)
 net.addLink(s4, s1, port1=3, port2=4, **linkopts_video)
 
@@ -82,10 +82,6 @@ for h in [h1, h2, h3, h4]:
 result = c0.cmd("bash -c \"ryu-manager slicing.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
 print(result)
 sleep(2)
-
-#net.pingAll()
-#sleep(2)
-#net.pingAll()
 
 CLI(net)
 

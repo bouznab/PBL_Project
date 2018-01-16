@@ -83,15 +83,14 @@ class SimpleSwitch13(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        match = parser.OFPMatch(udp_dst=udp_dst, ipv4_dst=ipv4_dst)
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP , ip_proto=17, udp_dst=udp_dst, ipv4_dst=ipv4_dst)
         actions = [parser.OFPActionOutput(out_port)]
 
-        self.logger.info("ADD_UDP_FLOW!")
         self.add_flow(datapath, priority, match, actions)
-        self.logger.info("Exiting add_udp cleanly")
 
     def set_video_slice(self, datapath):
         dpid = datapath.id
+        self.logger.info("\nSetting Video-Slice")
         if dpid in self.has_video:
             return
         else:
@@ -139,11 +138,21 @@ class SimpleSwitch13(app_manager.RyuApp):
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 0, match, actions)
-        #self.set_video_slice(datapath)
+
+        try:
+            for dst in self.mac_to_port[datapath.id]:
+                actions = [parser.OFPActionOutput(self.mac_to_port[datapath.id][dst])]
+                match = parser.OFPMatch(eth_dst=dst)
+                self.add_flow(datapath, 1, match, actions)
+        except KeyError:
+            self.logger.info("Switch {} not in mac_to_port".format(datapath.id))
+
+        self.set_video_slice(datapath)
         self.logger.info("------------------------------------------------")
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
+        self.logger.info("PACKET_IN THIS SHOULD NOT HAPPEN WITH HARDCODED MAC_TO_PORT AND SLICES")
         # If you hit this you might want to increase
         # the "miss_send_length" of your switch
         if ev.msg.msg_len < ev.msg.total_len:
