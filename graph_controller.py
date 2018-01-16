@@ -24,6 +24,7 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.mac import haddr_to_bin
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+
 from ryu.lib.packet import ether_types
 from ryu.lib import mac
 from ryu.topology.api import get_switch, get_link
@@ -40,27 +41,28 @@ class ProjectController(app_manager.RyuApp):
         super(ProjectController, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
 
-        self.topology_api_app = self
         self.net = nx.DiGraph()
-        self.nodes = {}
-        self.links = {}
-        self.no_of_nodes = 0
-        self.no_of_links = 0
-        self.i = 0
+        self.net.add_node(1)
+        self.net.add_node(2)
+        self.net.add_node(3)
+        self.net.add_node(4)
+        self.net.add_edge(1, 2, port=3, weight_video=20, weight_latency=1)
+        self.net.add_edge(2, 1, port=4, weight_video=20, weight_latency=1)
+        self.net.add_edge(2, 3, port=3, weight_video=1, weight_latency=20)
+        self.net.add_edge(3, 2, port=4, weight_video=1, weight_latency=20)
+        self.net.add_edge(3, 4, port=3, weight_video=1, weight_latency=20)
+        self.net.add_edge(4, 3, port=4, weight_video=1, weight_latency=20)
+        self.net.add_edge(4, 1, port=3, weight_video=1, weight_latency=20)
+        self.net.add_edge(1, 4, port=4, weight_video=1, weight_latency=20)
+        path = nx.shortest_path(self.net, 1, 2, 'weight_video')
+        self.logger.info("VIDEO: SHORTEST PATH FROM s1 to s2: \n{}".format(path))
+        path = nx.shortest_path(self.net, 1, 2, 'weight_latency')
+        self.logger.info("LATENCY: SHORTEST PATH FROM s1 to s2: \n{}".format(path))
         self.logger.info("**********ProjectController __init__")
 
-    def printG(self):
-        G = self.net
-        self.logger.info("G")
-        self.logger.info("nodes", G.nodes())  # 输出全部的节点： [1, 2, 3]
-        self.logger.info("edges", G.edges()) # 输出全部的边：[(2, 3)]
-        self.logger.info("number_of_edges", G.number_of_edges()) # 输出边的数量：1
-        for e in G.edges():
-            self.logger.info(G.get_edge_data(e[0], e[1]))
-
     # Handy function that lists all attributes in the given object
-    def ls(self, obj):
-        self.logger.info("\n".join([x for x in dir(obj) if x[0] != "_"]))
+    # def ls(self, obj):
+    #     self.logger.info("\n".join([x for x in dir(obj) if x[0] != "_"]))
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -82,50 +84,18 @@ class ProjectController(app_manager.RyuApp):
         datapath.send_msg(mod)
         self.logger.info("switch_features_handler is over")
 
-    @set_ev_cls(event.EventSwitchEnter)
-    def get_topology_data(self, ev):
-        self.logger.info("\n-----------get_topology_data")
-
-        switch_list = get_switch(self.topology_api_app, None)
-        switches = [switch.dp.id for switch in switch_list]
-        self.net.add_nodes_from(switches)
-
-        self.logger.info("-----------List of switches")
-        for switch in switch_list:
-            # self.ls(switch)
-            self.logger.info(switch)
-            # self.nodes[self.no_of_nodes] = switch
-            # self.no_of_nodes += 1
-
-        # -----------------------------
-        links_list = get_link(self.topology_api_app, None)
-        # for link in links_list:
-        #     self.logger.info(link)
-        # self.logger.info(links_list)
-        links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in links_list]
-        # self.logger.info(links)
-        self.net.add_edges_from(links)
-        links = [(link.dst.dpid, link.src.dpid, {'port': link.dst.port_no}) for link in links_list]
-        # self.logger.info(links)
-        self.net.add_edges_from(links)
-        self.logger.info("-----------List of links")
-        self.logger.info(self.net.edges())
-
-        # self.printG()
-        # the spectral layout
-        # pos = nx.spectral_layout(G)
-        # draw the regular graph
-        # nx.draw(G)
-
     def add_flow(self, datapath, in_port, dst, actions):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        match = datapath.ofproto_parser.OFPMatch(in_port=in_port, eth_dst=dst)
+        #match = datapath.ofproto_parser.OFPMatch(in_port=in_port, eth_dst=dst)
+        match = datapath.ofproto_parser.OFPMatch(eth_dst=dst)
+
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = datapath.ofproto_parser.OFPFlowMod(
             datapath=datapath, match=match, cookie=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
             priority=ofproto.OFP_DEFAULT_PRIORITY, instructions=inst)
+        self.logger.info("Adding flow: {}".format(mod))
         datapath.send_msg(mod)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -175,48 +145,20 @@ class ProjectController(app_manager.RyuApp):
         #     layer += 1
         # self.logger.info("..................")
 
-        self.logger.info("nodes")
-        self.logger.info(self.net.nodes())
-        self.logger.info("edges")
-        self.logger.info(self.net.edges())
-        self.logger.info("packet in switch:%s src:%s dst:%s in_port:%s", dpid, src, dst, in_port)
-
         if src not in self.net:
+            self.logger.info("adding {} to graph".format(src))
             self.net.add_node(src)
-            self.net.add_edge(dpid, src, port=in_port, weight=0)
-            self.net.add_edge(src, dpid, weight=0)
+            self.net.add_edge(dpid, src, port=in_port, weight_video=0, weight_latency=0)
+            self.net.add_edge(src, dpid, weight_video=0, weight_latency=0)
         if dst in self.net:
-            # self.logger.info(src in self.net)
-            # self.logger.info(nx.shortest_path(self.net,1,4))
-            # self.logger.info(nx.shortest_path(self.net,4,1))
-            # self.logger.info(nx.shortest_path(self.net,src,4))
-            # G= self.net
-            # G[1][2]['weight'] = 100
-            # G[2][1]['weight'] = 100
-            # G[2][3]['weight'] = 100
-            # G[3][2]['weight'] = 100
-            #
-            # G[1][4]['weight'] = 10
-            # G[4][1]['weight'] = 10
-            # G[4][5]['weight'] = 10
-            # G[5][4]['weight'] = 10
-            # G[5][3]['weight'] = 10
-            # G[3][5]['weight'] = 10
-            # self.printG()
-
             try:
-                path = nx.shortest_path(self.net, src, dst, weight="weight")
+                path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
                 next = path[path.index(dpid) + 1]
                 out_port = self.net[dpid][next]['port']
+                self.logger.info(path)
             except Exception as e:
-                #self.logger.info(e)
-                pass
-            # self.logger.info(path)
-            # self.logger.info(G[path[0]][path[1]])
-            # self.logger.info(G[path[-2]][path[-1]])
-            # self.logger.info("dpid=", str(dpid))
-            #self.logger.info("length=", nx.shortest_path_length(self.net, src, dst, weight="weight"))
-            out_port = 100
+                self.logger.info("NO SHORTEST PATH")
+                out_port = ofproto.OFPP_FLOOD
 
         else:
             out_port = ofproto.OFPP_FLOOD
