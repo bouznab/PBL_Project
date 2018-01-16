@@ -79,8 +79,7 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.4", mac="10:10:10:10:10:14")
 
 ################################ Change this line so that hardcoded.py can be imported by ryu-manager and adjust the log-file ###########
-result = c0.cmd("bash -c \"ryu-manager slicing.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
-print(result)
+#result = c0.cmd("bash -c \"ryu-manager slicing.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
 sleep(2)
 
 CLI(net)
