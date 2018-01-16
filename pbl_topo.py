@@ -4,7 +4,6 @@
 from time import sleep
 from mininet.net import Mininet
 from mininet.node import Host
-from mininet.node import RemoteController
 from mininet.cli import CLI
 from mininet.node import RemoteController
 from mininet.link import TCLink
@@ -46,7 +45,7 @@ for sw in net.switches:
     sw.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
     sw.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
 
-c0 = net.addController('c0', port=6633)
+c0 = net.addController('c0', ip='127.0.0.1', port=6633)
 
 #adding links
 linkopts =  dict(bw=400, delay='0.5ms', loss=0)
