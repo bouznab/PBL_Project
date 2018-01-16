@@ -139,20 +139,20 @@ class SimpleSwitch13(app_manager.RyuApp):
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 0, match, actions)
 
-        try:
-            for dst in self.mac_to_port[datapath.id]:
-                actions = [parser.OFPActionOutput(self.mac_to_port[datapath.id][dst])]
-                match = parser.OFPMatch(eth_dst=dst)
-                self.add_flow(datapath, 1, match, actions)
-        except KeyError:
-            self.logger.info("Switch {} not in mac_to_port".format(datapath.id))
+        # try:
+        #     for dst in self.mac_to_port[datapath.id]:
+        #         actions = [parser.OFPActionOutput(self.mac_to_port[datapath.id][dst])]
+        #         match = parser.OFPMatch(eth_dst=dst)
+        #         self.add_flow(datapath, 1, match, actions)
+        # except KeyError:
+        #     self.logger.info("Switch {} not in mac_to_port".format(datapath.id))
 
         self.set_video_slice(datapath)
         self.logger.info("------------------------------------------------")
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-        self.logger.info("PACKET_IN THIS SHOULD NOT HAPPEN WITH HARDCODED MAC_TO_PORT AND SLICES")
+        self.logger.info("------------------------------------------------")
         # If you hit this you might want to increase
         # the "miss_send_length" of your switch
         if ev.msg.msg_len < ev.msg.total_len:
@@ -160,6 +160,8 @@ class SimpleSwitch13(app_manager.RyuApp):
                               ev.msg.msg_len, ev.msg.total_len)
         msg = ev.msg
         datapath = msg.datapath
+
+        self.logger.info("Switch {}\n".format(datapath.id))
 
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -178,39 +180,39 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.mac_to_port.setdefault(dpid, {})
 
         # print some info about incoming packet to get a feel for controller traffic
-        self.logger.info("------------------------------------------------")
-        self.logger.info("Switch {}, in_port={}".format(dpid, in_port))
-        layer = 0
-        for p in pkt.protocols:
-            self.logger.info("..................\nlayer {}".format(layer))
-            try:
-                if p.protocol_name:
-                    self.logger.info("{} Packet:".format(p.protocol_name))
-            except Exception:
-                pass
-            try:
-                if p.protocol_name and p.src and p.dst:
-                    self.logger.info("from: {} | to {}".format(p.src, p.dst))
-                    if layer > 0:
-                        try:
-                            self.logger.info("p._TYPES[p.proto]: {}".format(p._TYPES[p.proto]))
-                        except Exception:
-                            self.logger.info("No special protocol")
-            except Exception:
-                pass
-            if layer == 2:
-                try:
-                    self.logger.info("UDP dst_port: {}".format(p.dst_port))
-                except Exception:
-                    self.logger.info("NOT UDP: type(p)={}".format(type(p)))
-            layer += 1
-        self.logger.info("..................")
+        # layer = 0
+        # for p in pkt.protocols:
+        #     self.logger.info("..................\nlayer {}".format(layer))
+        #     try:
+        #         if p.protocol_name:
+        #             self.logger.info("{} Packet:".format(p.protocol_name))
+        #     except Exception:
+        #         pass
+        #     try:
+        #         if p.protocol_name and p.src and p.dst:
+        #             self.logger.info("from: {} | to {}".format(p.src, p.dst))
+        #             if layer > 0:
+        #                 try:
+        #                     self.logger.info("p._TYPES[p.proto]: {}".format(p._TYPES[p.proto]))
+        #                 except Exception:
+        #                     self.logger.info("No special protocol")
+        #     except Exception:
+        #         pass
+        #     if layer == 2:
+        #         try:
+        #             self.logger.info("UDP dst_port: {}".format(p.dst_port))
+        #         except Exception:
+        #             self.logger.info("NOT UDP: type(p)={}".format(type(p)))
+        #     layer += 1
+        # self.logger.info("..................")
 
         # learn a mac address to avoid FLOOD next time.
-        #self.mac_to_port[dpid][src] = in_port
+        # if src not in self.mac_to_port[dpid]:
+        #     self.mac_to_port[dpid][src] = in_port
+        # else:
+        #     self.logger.info("src is in mac_to_port!")
 
         if dst in self.mac_to_port[dpid]:
-            self.logger.info("HIT! dst-mac was in mac_to_port")
             out_port = self.mac_to_port[dpid][dst]
         else:
             out_port = ofproto.OFPP_FLOOD
