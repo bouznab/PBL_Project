@@ -16,7 +16,6 @@
 
 
 from ryu.base import app_manager
-from ryu.controller import mac_to_port
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -24,6 +23,9 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.mac import haddr_to_bin
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import udp
+from ryu.lib.packet import tcp
 
 from ryu.lib.packet import ether_types
 from ryu.lib import mac
@@ -39,25 +41,26 @@ class ProjectController(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(ProjectController, self).__init__(*args, **kwargs)
-        self.mac_to_port = {}
+        self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
 
         self.net = nx.DiGraph()
+        for i in range(4):
+            self.net.add_node(self.hosts[i])
+            self.net.add_edge(i+1, self.hosts[i], port=2, weight_video=0, weight_latency=0)
+            self.net.add_edge(self.hosts[i], i+1, weight_video=0, weight_latency=0)
+
         self.net.add_node(1)
         self.net.add_node(2)
         self.net.add_node(3)
         self.net.add_node(4)
         self.net.add_edge(1, 2, port=3, weight_video=20, weight_latency=1)
         self.net.add_edge(2, 1, port=4, weight_video=20, weight_latency=1)
-        self.net.add_edge(2, 3, port=3, weight_video=1, weight_latency=20)
-        self.net.add_edge(3, 2, port=4, weight_video=1, weight_latency=20)
-        self.net.add_edge(3, 4, port=3, weight_video=1, weight_latency=20)
-        self.net.add_edge(4, 3, port=4, weight_video=1, weight_latency=20)
-        self.net.add_edge(4, 1, port=3, weight_video=1, weight_latency=20)
-        self.net.add_edge(1, 4, port=4, weight_video=1, weight_latency=20)
-        path = nx.shortest_path(self.net, 1, 2, 'weight_video')
-        self.logger.info("VIDEO: SHORTEST PATH FROM s1 to s2: \n{}".format(path))
-        path = nx.shortest_path(self.net, 1, 2, 'weight_latency')
-        self.logger.info("LATENCY: SHORTEST PATH FROM s1 to s2: \n{}".format(path))
+        self.net.add_edge(2, 3, port=3, weight_video=1, weight_latency=1)
+        self.net.add_edge(3, 2, port=4, weight_video=1, weight_latency=1)
+        self.net.add_edge(3, 4, port=3, weight_video=1, weight_latency=1)
+        self.net.add_edge(4, 3, port=4, weight_video=1, weight_latency=1)
+        self.net.add_edge(4, 1, port=3, weight_video=1, weight_latency=1)
+        self.net.add_edge(1, 4, port=4, weight_video=1, weight_latency=1)
         self.logger.info("**********ProjectController __init__")
 
     # Handy function that lists all attributes in the given object
@@ -69,10 +72,11 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("\n-----------switch_features_handler is called")
 
         msg = ev.msg
-        self.logger.info('OFPSwitchFeatures received: datapath_id=0x%016x n_buffers=%d n_tables=%d auxiliary_id=%d capabilities=0x%08x' % (
-            msg.datapath_id, msg.n_buffers, msg.n_tables, msg.auxiliary_id, msg.capabilities))
-
+        # self.logger.info('OFPSwitchFeatures received: datapath_id=0x%016x n_buffers=%d n_tables=%d auxiliary_id=%d capabilities=0x%08x' % (
+        #     msg.datapath_id, msg.n_buffers, msg.n_tables, msg.auxiliary_id, msg.capabilities))
+        self.logger.info("Setting table-miss flow entry.")
         datapath = ev.msg.datapath
+        dpid = datapath.id
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         match = parser.OFPMatch()
@@ -82,21 +86,69 @@ class ProjectController(app_manager.RyuApp):
             datapath=datapath, match=match, cookie=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0, priority=0, instructions=inst)
         datapath.send_msg(mod)
-        self.logger.info("switch_features_handler is over")
+        self.logger.info("switch_features_handler is over\n")
 
-    def add_flow(self, datapath, in_port, dst, actions):
+    def add_udp_flow(self, datapath, udp_dst, ipv4_src, ipv4_dst, actions, priority=1):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         #match = datapath.ofproto_parser.OFPMatch(in_port=in_port, eth_dst=dst)
-        match = datapath.ofproto_parser.OFPMatch(eth_dst=dst)
+        match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP , ip_proto=17, udp_dst=udp_dst, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = datapath.ofproto_parser.OFPFlowMod(
             datapath=datapath, match=match, cookie=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=ofproto.OFP_DEFAULT_PRIORITY, instructions=inst)
-        self.logger.info("Adding flow: {}".format(mod))
+            priority=priority, instructions=inst)
+        self.logger.info("\nAdding UDP flow: {}".format(mod))
         datapath.send_msg(mod)
+
+    def add_video_rule(self, datapath, ipv4_src,  ipv4_dst):
+        dpid = datapath.id
+        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_video")
+        if dpid in path:
+            next = path[path.index(dpid) + 1]
+            out_port = self.net[dpid][next]['port']
+            # TODO edit actions to set proper queues
+            #actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=0),datapath.ofproto_parser.OFPActionOutput(out_port)]
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+            self.add_udp_flow(datapath=datapath, udp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=3)
+            return out_port
+        else:
+            return None
+
+    def add_latency_rule(self, datapath, ipv4_src,  ipv4_dst):
+        dpid = datapath.id
+        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_latency")
+        if dpid in path:
+            next = path[path.index(dpid) + 1]
+            out_port = self.net[dpid][next]['port']
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)] # TODO set correct queue
+            self.add_udp_flow(datapath=datapath, udp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=4)
+            return out_port
+        else:
+            return None
+
+    def add_base_flow(self, datapath, in_port, ipv4_src, ipv4_dst, actions):
+        dpid = datapath.id
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        mod = datapath.ofproto_parser.OFPFlowMod(
+            datapath=datapath, match=match, cookie=0,
+            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
+            priority=1, instructions=inst)
+        datapath.send_msg(mod)
+        self.logger.info("SWITCH {} : Adding base rule for src:{} dst:{}".format(dpid, ipv4_src, ipv4_dst))
+
+        # add additional flows to make sure the switch asks the controller again
+        # for important packets
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
+        self.logger.info("Adding callback rules for higher slice packets.")
+        self.add_udp_flow(datapath=datapath, udp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
+        self.add_udp_flow(datapath=datapath, udp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
+        self.logger.info("---------------------\n")
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -108,15 +160,19 @@ class ProjectController(app_manager.RyuApp):
         in_port = msg.match['in_port']
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocol(ethernet.ethernet)
+        ipv4_handle = pkt.get_protocol(ipv4.ipv4)
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
             return
 
-        dst = eth.dst
-        src = eth.src
+        try:
+            dst = ipv4_handle.dst
+            src = ipv4_handle.src
+        except Exception:
+            self.logger.error("\n{} is not an IPv4-Packet! Dropping..\n".format(pkt))
+            return
         dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
 
         # print some info about incoming packet to get a feel for controller traffic
         # layer = 0
@@ -150,24 +206,33 @@ class ProjectController(app_manager.RyuApp):
             self.net.add_node(src)
             self.net.add_edge(dpid, src, port=in_port, weight_video=0, weight_latency=0)
             self.net.add_edge(src, dpid, weight_video=0, weight_latency=0)
-        if dst in self.net:
-            try:
-                path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
-                next = path[path.index(dpid) + 1]
-                out_port = self.net[dpid][next]['port']
-                self.logger.info(path)
-            except Exception as e:
-                self.logger.info("NO SHORTEST PATH")
-                out_port = ofproto.OFPP_FLOOD
+
+        if ipv4_handle.proto == 17:
+            if pkt.get_protocol(udp.udp).dst_port == 5004:
+                self.logger.info("SWITCH {} : Adding video-flow".format(dpid))
+                out_port = self.add_video_rule(datapath, src, dst)
+            elif pkt.get_protocol(udp.udp).dst_port == 10022:
+                out_port = self.add_latency_rule(datapath, src, dst)
+            else:
+                out_port = None
 
         else:
+            if dst in self.net:
+                    path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
+                    if dpid in path:
+                        next = path[path.index(dpid) + 1]
+                        out_port = self.net[dpid][next]['port']
+            else:
+                out_port = ofproto.OFPP_FLOOD
+            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+            # install a flow to avoid packet_in next time
+            if out_port != ofproto.OFPP_FLOOD:
+                self.add_base_flow(datapath, in_port, src, dst, actions)
+
+        if out_port is None:
             out_port = ofproto.OFPP_FLOOD
 
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-
-        # install a flow to avoid packet_in next time
-        if out_port != ofproto.OFPP_FLOOD:
-            self.add_flow(datapath, in_port, dst, actions)
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions)
