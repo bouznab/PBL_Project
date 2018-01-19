@@ -40,6 +40,7 @@ class ProjectController(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
+        """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
 
@@ -69,6 +70,7 @@ class ProjectController(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
+        """Add table-miss flow entry."""
         self.logger.info("\n-----------switch_features_handler is called")
 
         msg = ev.msg
@@ -89,6 +91,7 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("switch_features_handler is over\n")
 
     def add_udp_flow(self, datapath, udp_dst, ipv4_src, ipv4_dst, actions, priority=1):
+        """Add flow with matching UDP-port, ipv4-src and ipv4-dst."""
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         #match = datapath.ofproto_parser.OFPMatch(in_port=in_port, eth_dst=dst)
@@ -103,6 +106,9 @@ class ProjectController(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def add_video_rule(self, datapath, ipv4_src,  ipv4_dst):
+        """Calculate shortest path based on 'weight_video'. If the switch
+        with datapath.id is in the path, add a flow with the appropriate
+        out_port and return it, otherwise return None."""
         dpid = datapath.id
         path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_video")
         if dpid in path:
@@ -114,9 +120,13 @@ class ProjectController(app_manager.RyuApp):
             self.add_udp_flow(datapath=datapath, udp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=3)
             return out_port
         else:
+            self.logger.info("Switch {} got video-packet but is not on shortest path!".format(dpid))
             return None
 
     def add_latency_rule(self, datapath, ipv4_src,  ipv4_dst):
+        """Calculate shortest path based on 'weight_latency'. If the switch
+        with datapath.id is in the path, add a flow with the appropriate
+        out_port and return it, otherwise return None."""
         dpid = datapath.id
         path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_latency")
         if dpid in path:
@@ -126,9 +136,14 @@ class ProjectController(app_manager.RyuApp):
             self.add_udp_flow(datapath=datapath, udp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=4)
             return out_port
         else:
+            self.logger.info("Switch {} got latency-packet but is not on shortest path!".format(dpid))
             return None
 
     def add_base_flow(self, datapath, in_port, ipv4_src, ipv4_dst, actions):
+        """Used for non-special traffic, adds a flow based on weight_latency
+        and also flows with higher priority to make sure that UDP packets
+        with special ports are send to the controller again for custom
+        flow processing."""
         dpid = datapath.id
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -152,6 +167,9 @@ class ProjectController(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
+        """Packets with UDP-dst-port 5004 and 10022 have special flows added
+        to the switch all others are asigned to the 'base-slice' witch arbitrary
+        routing."""
         self.logger.info("**********_packet_in_handler")
         msg = ev.msg
         datapath = msg.datapath
@@ -174,62 +192,38 @@ class ProjectController(app_manager.RyuApp):
             return
         dpid = datapath.id
 
-        # print some info about incoming packet to get a feel for controller traffic
-        # layer = 0
-        # for p in pkt.protocols:
-        #     self.logger.info("..................\nlayer {}".format(layer))
-        #     try:
-        #         if p.protocol_name:
-        #             self.logger.info("{} Packet:".format(p.protocol_name))
-        #     except Exception:
-        #         pass
-        #     try:
-        #         if p.protocol_name and p.src and p.dst:
-        #             self.logger.info("from: {} | to {}".format(p.src, p.dst))
-        #             if layer > 0:
-        #                 try:
-        #                     self.logger.info("p._TYPES[p.proto]: {}".format(p._TYPES[p.proto]))
-        #                 except Exception:
-        #                     self.logger.info("No special protocol")
-        #     except Exception:
-        #         pass
-        #     if layer == 2:
-        #         try:
-        #             self.logger.info("UDP dst_port: {}".format(p.dst_port))
-        #         except Exception:
-        #             self.logger.info("NOT UDP: type(p)={}".format(type(p)))
-        #     layer += 1
-        # self.logger.info("..................")
-
+        # shouldn't be necessary but in case a new host is added we can add it
+        # to the graph with this
         if src not in self.net:
             self.logger.info("adding {} to graph".format(src))
             self.net.add_node(src)
             self.net.add_edge(dpid, src, port=in_port, weight_video=0, weight_latency=0)
             self.net.add_edge(src, dpid, weight_video=0, weight_latency=0)
 
+        out_port = None
+        # UDP-slices
         if ipv4_handle.proto == 17:
             if pkt.get_protocol(udp.udp).dst_port == 5004:
                 self.logger.info("SWITCH {} : Adding video-flow".format(dpid))
                 out_port = self.add_video_rule(datapath, src, dst)
             elif pkt.get_protocol(udp.udp).dst_port == 10022:
                 out_port = self.add_latency_rule(datapath, src, dst)
-            else:
-                out_port = None
+            # add other UDP slices
+        # add TCP slices
 
-        else:
-            if dst in self.net:
-                    path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
-                    if dpid in path:
-                        next = path[path.index(dpid) + 1]
-                        out_port = self.net[dpid][next]['port']
-            else:
-                out_port = ofproto.OFPP_FLOOD
-            actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-            # install a flow to avoid packet_in next time
-            if out_port != ofproto.OFPP_FLOOD:
+        # add base-slice
+        if dst in self.net and out_port is None:
+            path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
+            if dpid in path:
+                next = path[path.index(dpid) + 1]
+                out_port = self.net[dpid][next]['port']
+                actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
                 self.add_base_flow(datapath, in_port, src, dst, actions)
-
+            else:
+                self.logger.info("Switch {} got a packet but is not in the shortest path!".format(dpid))
+                out_port = ofproto.OFPP_FLOOD
         if out_port is None:
+            self.logger.info("\nNO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
             out_port = ofproto.OFPP_FLOOD
 
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
