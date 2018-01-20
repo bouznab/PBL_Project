@@ -43,25 +43,29 @@ class ProjectController(app_manager.RyuApp):
         """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
+        self.slice_ports = [5004, 10022] # video and latency TODO third slice
+        self.slice_protocols = [17, 6] # UDP and TCP
+        self.VIDEO_QUEUE = 0
+        self.LATENCY_QUEUE = 1
 
         self.net = nx.DiGraph()
         for i in range(4):
             self.net.add_node(self.hosts[i])
-            self.net.add_edge(i+1, self.hosts[i], port=2, weight_video=0, weight_latency=0)
-            self.net.add_edge(self.hosts[i], i+1, weight_video=0, weight_latency=0)
+            self.net.add_edge(i+1, self.hosts[i], port=2, weight=0, video=0, latency=0)
+            self.net.add_edge(self.hosts[i], i+1, weight=0, video=0, latency=0)
 
         self.net.add_node(1)
         self.net.add_node(2)
         self.net.add_node(3)
         self.net.add_node(4)
-        self.net.add_edge(1, 2, port=3, weight_video=1, weight_latency=2)
-        self.net.add_edge(2, 1, port=4, weight_video=1, weight_latency=1)
-        self.net.add_edge(2, 3, port=3, weight_video=1, weight_latency=1)
-        self.net.add_edge(3, 2, port=4, weight_video=1, weight_latency=1)
-        self.net.add_edge(3, 4, port=3, weight_video=1, weight_latency=1)
-        self.net.add_edge(4, 3, port=4, weight_video=1, weight_latency=1)
-        self.net.add_edge(4, 1, port=3, weight_video=1, weight_latency=1)
-        self.net.add_edge(1, 4, port=4, weight_video=1, weight_latency=1)
+        self.net.add_edge(1, 2, port=3, weight=2, video=2, latency=2)
+        self.net.add_edge(2, 1, port=4, weight=1, video=1, latency=1)
+        self.net.add_edge(2, 3, port=3, weight=1, video=1, latency=1)
+        self.net.add_edge(3, 2, port=4, weight=1, video=1, latency=1)
+        self.net.add_edge(3, 4, port=3, weight=1, video=1, latency=1)
+        self.net.add_edge(4, 3, port=4, weight=1, video=1, latency=1)
+        self.net.add_edge(4, 1, port=3, weight=1, video=1, latency=1)
+        self.net.add_edge(1, 4, port=4, weight=1, video=1, latency=1)
         self.logger.info("**********ProjectController __init__")
 
     # Handy function that lists all attributes in the given object
@@ -90,81 +94,52 @@ class ProjectController(app_manager.RyuApp):
         datapath.send_msg(mod)
         self.logger.info("switch_features_handler is over\n")
 
-    def add_udp_flow(self, datapath, udp_dst, ipv4_src, ipv4_dst, actions, priority=1):
-        """Add flow with matching UDP-port, ipv4-src and ipv4-dst."""
+    def add_port_based_flow(self, datapath, dst_port, ipv4_src, ipv4_dst, actions, priority, protocol):
+        """Add flow with matching dst_port, ipv4-src and ipv4-dst."""
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        #match = datapath.ofproto_parser.OFPMatch(in_port=in_port, eth_dst=dst)
-        match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP , ip_proto=17, udp_dst=udp_dst, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+        if protocol == 17:
+            match = datapath.ofproto_parser.OFPMatch(
+                eth_type=ether_types.ETH_TYPE_IP, ip_proto=protocol, udp_dst=dst_port,
+                ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
 
+            self.logger.info("\nAdding UDP flow:\nmatch:{}\nactions={}\n".format(match, actions))
+        elif protocol == 6:
+            match = datapath.ofproto_parser.OFPMatch(
+                eth_type=ether_types.ETH_TYPE_IP, ip_proto=protocol, tcp_dst=dst_port,
+                ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+
+            self.logger.info("\nAdding TCP flow:\nmatch:{}\nactions={}\n".format(match, actions))
+        else:
+            self.logger.info("ERROR: Protocol {} not supported!".format(protocol))
+            return
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = datapath.ofproto_parser.OFPFlowMod(
             datapath=datapath, match=match, cookie=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
             priority=priority, instructions=inst)
-        self.logger.info("\nAdding UDP flow: {}".format(mod))
         datapath.send_msg(mod)
 
-    def add_tcp_flow(self, datapath, tcp_dst, ipv4_src, ipv4_dst, actions, priority=1):
-        """Add flow with matching TCP-port, ipv4-src and ipv4-dst."""
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP , ip_proto=6, tcp_dst=tcp_dst, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
-
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath, match=match, cookie=0,
-            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=priority, instructions=inst)
-        self.logger.info("\nAdding TCP flow: {}".format(mod))
-        datapath.send_msg(mod)
-
-    def add_video_rule(self, datapath, ipv4_src,  ipv4_dst, proto='udp'):
-        """Calculate shortest path based on 'weight_video'. If the switch
-        with datapath.id is in the path, add a flow with the appropriate
-        out_port and return it, otherwise return None."""
+    def add_slice(self, datapath, ipv4_src, ipv4_dst, dst_port, weight, queue_id, protocol, of_priority):
         dpid = datapath.id
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_video")
+        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
         if dpid in path:
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
-            # TODO edit actions to set proper queues
-            actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=0),datapath.ofproto_parser.OFPActionOutput(out_port)]
-            #actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-            if proto == 'udp':
-                self.add_udp_flow(datapath=datapath, udp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=3)
-            elif proto == 'tcp':
-                self.add_tcp_flow(datapath=datapath, tcp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=3)
-            else:
-                self.logger.info("NO SUCH PROTOCOL: {}".format(proto))
+            actions = [
+                datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
+                datapath.ofproto_parser.OFPActionOutput(out_port)]
+
+            self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
+                                     ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                     actions=actions, priority=of_priority,
+                                     protocol=protocol)
             return out_port
         else:
-            self.logger.info("Switch {} got video-packet but is not on shortest path!".format(dpid))
+            self.logger.info("ERROR: Switch {} called add_slice but packet is not on shortest path!".format(dpid))
             return None
 
-    def add_latency_rule(self, datapath, ipv4_src,  ipv4_dst, proto='udp'):
-        """Calculate shortest path based on 'weight_latency'. If the switch
-        with datapath.id is in the path, add a flow with the appropriate
-        out_port and return it, otherwise return None."""
-        dpid = datapath.id
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight_latency")
-        if dpid in path:
-            next = path[path.index(dpid) + 1]
-            out_port = self.net[dpid][next]['port']
-            actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=1),datapath.ofproto_parser.OFPActionOutput(out_port)]
-            #actions = [datapath.ofproto_parser.OFPActionOutput(out_port)] # TODO set correct queue
-            if proto == 'udp':
-                self.add_udp_flow(datapath=datapath, udp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=4)
-            elif proto == 'tcp':
-                self.add_tcp_flow(datapath=datapath, tcp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=4)
-            else:
-                self.logger.info("NO SUCH PROTOCOL: {}".format(proto))
-            return out_port
-        else:
-            self.logger.info("Switch {} got latency-packet but is not on shortest path!".format(dpid))
-            return None
-
-    def add_base_flow(self, datapath, in_port, ipv4_src, ipv4_dst, actions):
+    def add_base_flow(self, datapath, ipv4_src, ipv4_dst):
         """Used for non-special traffic, adds a flow based on weight_latency
         and also flows with higher priority to make sure that UDP packets
         with special ports are send to the controller again for custom
@@ -173,6 +148,16 @@ class ProjectController(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight")
+        if dpid in path:
+            next = path[path.index(dpid) + 1]
+            out_port = self.net[dpid][next]['port']
+            actions = [
+                datapath.ofproto_parser.OFPActionSetQueue(queue_id=0),
+                datapath.ofproto_parser.OFPActionOutput(out_port)]
+        else:
+            self.logger.info("ERROR: Switch {} got a packet but is not in the shortest path!".format(dpid))
+            return None
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = datapath.ofproto_parser.OFPFlowMod(
@@ -186,11 +171,14 @@ class ProjectController(app_manager.RyuApp):
         # for important packets
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
         self.logger.info("Adding callback rules for higher slice packets.")
-        self.add_udp_flow(datapath=datapath, udp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
-        self.add_udp_flow(datapath=datapath, udp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
-        self.add_tcp_flow(datapath=datapath, tcp_dst=5004, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
-        self.add_tcp_flow(datapath=datapath, tcp_dst=10022, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst, actions=actions, priority=2)
+        for protocol in self.slice_protocols:
+            for dst_port in self.slice_ports:
+                self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
+                                         ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                         actions=actions, priority=2,
+                                         protocol=protocol)
         self.logger.info("---------------------\n")
+        return out_port
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
@@ -207,6 +195,8 @@ class ProjectController(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocol(ethernet.ethernet)
         ipv4_handle = pkt.get_protocol(ipv4.ipv4)
+        dpid = datapath.id
+        out_port = None
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
@@ -215,54 +205,49 @@ class ProjectController(app_manager.RyuApp):
         try:
             dst = ipv4_handle.dst
             src = ipv4_handle.src
+            protocol = ipv4_handle.proto
         except Exception:
-            self.logger.error("\n{} is not an IPv4-Packet! Dropping..\n".format(pkt))
+            self.logger.error("ERROR:\n{} is not an IPv4-Packet! Dropping..\n".format(pkt))
             return
-        dpid = datapath.id
+        try:
+            dst_port = pkt.protocols[2].dst_port
+        except Exception:
+            self.logger.info("NON SLICE PROTOCOL: {}".format(protocol))
 
         # shouldn't be necessary but in case a new host is added we can add it
         # to the graph with this
         if src not in self.net:
-            self.logger.info("adding {} to graph".format(src))
+            self.logger.info("ERROR: adding {} to graph".format(src))
             self.net.add_node(src)
-            self.net.add_edge(dpid, src, port=in_port, weight_video=0, weight_latency=0)
-            self.net.add_edge(src, dpid, weight_video=0, weight_latency=0)
+            self.net.add_edge(dpid, src, port=in_port, weight=0, video=0, latency=0)
+            self.net.add_edge(src, dpid, weight=0, video=0, latency=0)
 
-        out_port = None
-        # UDP-slices
-        if ipv4_handle.proto == 17:
-            if pkt.get_protocol(udp.udp).dst_port == 5004:
-                self.logger.info("SWITCH {} : Adding video-flow".format(dpid))
-                out_port = self.add_video_rule(datapath, src, dst, proto='udp')
-            elif pkt.get_protocol(udp.udp).dst_port == 10022:
-                out_port = self.add_latency_rule(datapath, src, dst, proto='udp')
-            # add other UDP slices
-
-        if ipv4_handle.proto == 6:
-            if pkt.get_protocol(tcp.tcp).dst_port == 5004:
-                self.logger.info("SWITCH {} : Adding video-flow".format(dpid))
-                out_port = self.add_video_rule(datapath, src, dst, proto='tcp')
-            elif pkt.get_protocol(tcp.tcp).dst_port == 10022:
-                out_port = self.add_latency_rule(datapath, src, dst, proto='tcp')
-            # add other TCP slices
+        if protocol in self.slice_protocols and dst_port in self.slice_ports:
+            if dst_port == 5004:
+                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.VIDEO_QUEUE))
+                out_port =self.add_slice(datapath=datapath, ipv4_src=src,
+                                         ipv4_dst=dst, dst_port=dst_port,
+                                         weight='video',
+                                         queue_id=self.VIDEO_QUEUE,
+                                         protocol=protocol, of_priority=3)
+            elif dst_port == 10022:
+                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.LATENCY_QUEUE))
+                out_port = self.add_slice(datapath=datapath, ipv4_src=src,
+                                          ipv4_dst=dst, dst_port=dst_port,
+                                          weight='latency',
+                                          queue_id=self.LATENCY_QUEUE,
+                                          protocol=protocol, of_priority=3)
 
         # add broadcast use switch with in_port==2 to set TTL
-
         # add multicast (not sure how yet)
-
-        # add base-slice
-        if dst in self.net and out_port is None:
-            path = nx.shortest_path(self.net, src, dst, weight="weight_latency")
-            if dpid in path:
-                next = path[path.index(dpid) + 1]
-                out_port = self.net[dpid][next]['port']
-                actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
-                self.add_base_flow(datapath, in_port, src, dst, actions)
-            else:
-                self.logger.info("Switch {} got a packet but is not in the shortest path!".format(dpid))
-                out_port = ofproto.OFPP_FLOOD
+        else:
+            # non-special traffic!
+            if dst in self.net and out_port is None:
+                out_port = self.add_base_flow(datapath=datapath,
+                                              ipv4_src=src,
+                                              ipv4_dst=dst)
         if out_port is None:
-            self.logger.info("\nNO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
+            self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
             out_port = ofproto.OFPP_FLOOD
 
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]

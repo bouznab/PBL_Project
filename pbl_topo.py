@@ -84,7 +84,7 @@ qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=80000
                 queues=0=@be,1=@af,2=@ef \
                 -- --id=@be create queue other-config:priority=1 \
                 -- --id=@af create queue other-config:priority=50 other-config:min-rate=1000 \
-                -- --id=@ef create queue other-config:priority=100 other-config:min-rate=3000').splitlines()[0]
+                -- --id=@ef create queue other-config:priority=150 other-config:min-rate=100000').splitlines()[0]
 for link in net.links:
     print("link: {} <-> {}".format(link.intf1.name, link.intf2.name))
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf1.name, qos_id))
