@@ -4,25 +4,29 @@ from scapy.all import *
 from time import *
 import sys
 
+ipToMac = {"10.0.0.1":"10:10:10:10:10:11","10.0.0.2":"10:10:10:10:10:12",
+        "10.0.0.3":"10:10:10:10:10:13","10.0.0.4":"10:10:10:10:10:14"}
+
 def QoS_ping(host, port, count=100):
-    packet = IP(dst=host)/TCP(sport=port, dport=port)
+    packet = Ether(dst=ipToMac[host])/IP(dst=host)/TCP(sport=port, dport=port)
     t = 0.0
     average = 0.0
-    s = conf.L3socket(iface='h1-eth2')
+    #s = conf.L3socket(iface='h1-eth2')
     for x in range(count):
         t = 0.0
         t1=time()
-        ans=s.sr1(packet, verbose=0)
-        rx=ans[0][1]
-        tx=ans[0][0]
-        delta = rx.time -tx.sent_time
+        #ans=s.sr1(packet, verbose=0)
+        ans = srp(packet,iface="h1-eth2",verbose=0)
+        #rx=ans[0][1]
+        #tx=ans[0][0]
+        #delta = rx.time -tx.sent_time
         t2=time()
         t+=t2-t1
         average += t
         print 'packet {} latency = {}'.format(x, t*1000)
 
     print'average ping = {}'.format(average/count*1000)
-    s.close()
+    #s.close()
 
 if __name__=="__main__":
     if len(sys.argv) < 1:
