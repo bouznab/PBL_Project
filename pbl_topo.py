@@ -34,44 +34,24 @@ s2 = net.addSwitch('s2', protocols="OpenFlow13")
 s3 = net.addSwitch('s3', protocols="OpenFlow13")
 s4 = net.addSwitch('s4', protocols="OpenFlow13")
 
-for h in net.hosts:
-    print "disable ipv6"
-    h.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
-    h.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
-    h.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
-
-for sw in net.switches:
-    print("disable ipv6 for switch", sw)
-    sw.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
-    sw.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
-    sw.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
-
 c0 = net.addController('c0', ip='127.0.0.1', port=6633)
 
 #adding links
-linkopts =  dict(bw=1, delay='3ms', loss=0)
-linkopts_reliable = dict(bw=1, delay='3ms', loss=0)
-linkopts_video = dict(bw=1, delay='3ms', loss=0)
-linkopts_latency = dict(bw=1, delay='3ms', loss=0)
-# linkopts =  dict(bw=400, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True)
-# linkopts_reliable = dict(bw=100, delay='5ms', loss=0, max_queue_size=1000, use_htb=True)
-# linkopts_video = dict(bw=200, delay='30ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
-# linkopts_latency = dict(bw=0.5, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
-net.addLink(h1, s1, port1=2, port2=2, **linkopts)
-net.addLink(h2, s2, port1=2, port2=2, **linkopts)
-net.addLink(h3, s3, port1=2, port2=2, **linkopts)
-net.addLink(h4, s4, port1=2, port2=2, **linkopts)
-net.addLink(s1, s2, port1=3, port2=4, **linkopts_latency)
-net.addLink(s2, s3, port1=3, port2=4, **linkopts_video)
-net.addLink(s3, s4, port1=3, port2=4, **linkopts_video)
-net.addLink(s4, s1, port1=3, port2=4, **linkopts_video)
+net.addLink(h1, s1, port1=2, port2=2)
+net.addLink(h2, s2, port1=2, port2=2)
+net.addLink(h3, s3, port1=2, port2=2)
+net.addLink(h4, s4, port1=2, port2=2)
+net.addLink(s1, s2, port1=3, port2=4)
+net.addLink(s2, s3, port1=3, port2=4)
+net.addLink(s3, s4, port1=3, port2=4)
+net.addLink(s4, s1, port1=3, port2=4)
 
 net.build()
-c0.start()
-s1.start([c0])
-s2.start([c0])
-s3.start([c0])
-s4.start([c0])
+# c0.start()
+# s1.start([c0])
+# s2.start([c0])
+# s3.start([c0])
+# s4.start([c0])
 net.start()
 h1.setMAC("10:10:10:10:10:11")
 h2.setMAC("10:10:10:10:10:12")
@@ -83,26 +63,32 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.3", mac="10:10:10:10:10:13")
     h.setARP(ip="10.0.0.4", mac="10:10:10:10:10:14")
 
-switch_number = 0
+for h in net.hosts:
+    #print "disable ipv6"
+    h.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
+    h.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
+    h.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
+
 for sw in net.switches:
-    switch_number += 1
-    ## Configure Priority queues in ovs-switch
-    ovs_cmd = 'ovs-vsctl create qos type=linux-htb \
-    queues=0=@ab,1=@cd,2=@ef -- --id=@ab create queue other-config:priority=5 \
-    -- --id=@cd create queue other-config:priority=2 \
-    -- --id=@ef create queue other-config:priority=1'
-    #print ovs_cmd
-    qos_id = sw.cmd(ovs_cmd).splitlines()[0]
-    #print(sw.dpid == qos_id)
-    #print(qos_id)
-    for link in net.links:
-        sw.cmd('ovs-vsctl set Port s%d-eth2 qos=%s' % (switch_number, qos_id))
-        sw.cmd('ovs-vsctl set Port s%d-eth3 qos=%s' % (switch_number, qos_id))
-        sw.cmd('ovs-vsctl set Port s%d-eth4 qos=%s' % (switch_number, qos_id))
+    #print "disable ipv6"
+    sw.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
+    sw.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
+    sw.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
+
 
 ################################ Change this line so that slicing.py (or whatever controller) can be imported by ryu-manager and adjust the log-file ###########
 #result = c0.cmd("bash -c \"ryu-manager graph_controller.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
-sleep(2)
+
+## Configure Priority queues in ovs-switch
+qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=800000 \
+                queues=0=@be,1=@af,2=@ef \
+                -- --id=@be create queue other-config:priority=1 \
+                -- --id=@af create queue other-config:priority=50 other-config:min-rate=1000 \
+                -- --id=@ef create queue other-config:priority=100 other-config:min-rate=3000').splitlines()[0]
+for link in net.links:
+    print("link: {} <-> {}".format(link.intf1.name, link.intf2.name))
+    s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf1.name, qos_id))
+    s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf2.name, qos_id))
 
 CLI(net)
 
