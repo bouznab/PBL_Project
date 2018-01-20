@@ -7,6 +7,7 @@ from mininet.node import Host
 from mininet.cli import CLI
 from mininet.node import RemoteController
 from mininet.link import TCLink
+from mininet.node import OVSSwitch
 
 """
     H1 ²---² S1 ⁴----------³ S4 ²---² H4
@@ -19,7 +20,7 @@ from mininet.link import TCLink
     The little numbers are the switch ports.
     """
 
-net = Mininet(link=TCLink, controller=RemoteController)
+net = Mininet(link=TCLink, controller=RemoteController, switch=OVSSwitch)
 
 #hosts
 h1 = net.addHost('h1')
@@ -52,6 +53,10 @@ linkopts =  dict(bw=400, delay='0.5ms', loss=0)
 linkopts_reliable = dict(bw=100, delay='5ms', loss=0)
 linkopts_video = dict(bw=200, delay='30ms', loss=0) #FIXME loss=2
 linkopts_latency = dict(bw=0.5, delay='0.5ms', loss=10) #FIXME loss=2
+# linkopts =  dict(bw=400, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True)
+# linkopts_reliable = dict(bw=100, delay='5ms', loss=0, max_queue_size=1000, use_htb=True)
+# linkopts_video = dict(bw=200, delay='30ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
+# linkopts_latency = dict(bw=0.5, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
 net.addLink(h1, s1, port1=2, port2=2, **linkopts)
 net.addLink(h2, s2, port1=2, port2=2, **linkopts)
 net.addLink(h3, s3, port1=2, port2=2, **linkopts)
@@ -78,11 +83,31 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.3", mac="10:10:10:10:10:13")
     h.setARP(ip="10.0.0.4", mac="10:10:10:10:10:14")
 
+switch_number = 0
+for sw in net.switches:
+    switch_number += 1
+    ## Configure Priority queues in ovs-switch
+    ovs_cmd = 'ovs-vsctl create qos type=linux-htb \
+    queues=0=@ab,1=@cd,2=@ef -- --id=@ab create queue other-config:priority=5 \
+    -- --id=@cd create queue other-config:priority=2 \
+    -- --id=@ef create queue other-config:priority=1'
+    #print ovs_cmd
+    qos_id = sw.cmd(ovs_cmd).splitlines()[0]
+    #print(sw.dpid == qos_id)
+    #print(qos_id)
+    for link in net.links:
+        sw.cmd('ovs-vsctl set Port s%d-eth2 qos=%s' % (switch_number, qos_id))
+        sw.cmd('ovs-vsctl set Port s%d-eth3 qos=%s' % (switch_number, qos_id))
+        sw.cmd('ovs-vsctl set Port s%d-eth4 qos=%s' % (switch_number, qos_id))
+
 ################################ Change this line so that slicing.py (or whatever controller) can be imported by ryu-manager and adjust the log-file ###########
 #result = c0.cmd("bash -c \"ryu-manager graph_controller.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
 sleep(2)
 
 CLI(net)
+
+for sw in net.switches:
+    sw.cmd('ovs-vsctl -- --all destroy QoS -- --all destroy Queue')
 
 c0.cmd('kill %while')
 net.stop()
