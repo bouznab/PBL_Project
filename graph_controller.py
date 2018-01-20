@@ -211,6 +211,10 @@ class ProjectController(app_manager.RyuApp):
             # add other UDP slices
         # add TCP slices
 
+        # add broadcast use switch with in_port==2 to set TTL
+
+        # add multicast (not sure how yet)
+        
         # add base-slice
         if dst in self.net and out_port is None:
             path = nx.shortest_path(self.net, src, dst, weight="weight_latency")

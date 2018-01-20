@@ -53,6 +53,10 @@ linkopts =  dict(bw=1, delay='3ms', loss=0)
 linkopts_reliable = dict(bw=1, delay='3ms', loss=0)
 linkopts_video = dict(bw=1, delay='3ms', loss=0)
 linkopts_latency = dict(bw=1, delay='3ms', loss=0)
+# linkopts =  dict(bw=400, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True)
+# linkopts_reliable = dict(bw=100, delay='5ms', loss=0, max_queue_size=1000, use_htb=True)
+# linkopts_video = dict(bw=200, delay='30ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
+# linkopts_latency = dict(bw=0.5, delay='0.5ms', loss=0, max_queue_size=1000, use_htb=True) #FIXME loss=2
 net.addLink(h1, s1, port1=2, port2=2, **linkopts)
 net.addLink(h2, s2, port1=2, port2=2, **linkopts)
 net.addLink(h3, s3, port1=2, port2=2, **linkopts)
