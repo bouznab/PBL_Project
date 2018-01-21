@@ -62,6 +62,11 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.2", mac="10:10:10:10:10:12")
     h.setARP(ip="10.0.0.3", mac="10:10:10:10:10:13")
     h.setARP(ip="10.0.0.4", mac="10:10:10:10:10:14")
+    h.setARP(ip="10.0.0.11", mac="11:11:11:11:11:11")
+    h.setARP(ip="10.0.0.22", mac="22:22:22:22:22:22")
+    h.setARP(ip="10.0.0.33", mac="33:33:33:33:33:33")
+    h.setARP(ip="10.0.0.44", mac="44:44:44:44:44:44")
+
 
 for h in net.hosts:
     #print "disable ipv6"
