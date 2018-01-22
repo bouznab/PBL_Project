@@ -13,9 +13,9 @@ else
     PORT=$2
 fi
 
-echo "ping latency" > stats.csv
+echo "ping latency port" > stats.csv
 python ping.py ${TARGET} ${PORT} >> stats.csv &
-echo "ping latency" > stats2.csv
+echo "ping latency port" > stats2.csv
 python ping.py ${TARGET} 10024 >> stats2.csv &
 
 echo waiting

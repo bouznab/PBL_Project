@@ -15,12 +15,15 @@ def QoS_ping(host, iface, port =10022, count=100):
     for x in range(count):
         t = 0.0
         t1=time()
-        ans = srp(packet,iface=iface,verbose=0)
+        ans,unans = srp(packet,iface=iface,timeout=15, verbose=0)
         t2=time()
         t+=t2-t1
         average += t
-        s = '{} {}'.format(x, t*1000)
-        print(s)
+        if unans == []:
+            s = '{} {} {}'.format(x, t*1000, port)
+            print(s)
+        else:
+            sys.stderr.write("timeout\n")
 
 
 if __name__=="__main__":
