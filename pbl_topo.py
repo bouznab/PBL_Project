@@ -86,10 +86,11 @@ for sw in net.switches:
 
 ## Configure Priority queues in ovs-switch
 qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=800000 \
-                queues=0=@be,1=@af,2=@ef \
-                -- --id=@be create queue other-config:priority=1 \
-                -- --id=@af create queue other-config:priority=50 other-config:min-rate=1000 \
-                -- --id=@ef create queue other-config:priority=150 other-config:min-rate=100000').splitlines()[0]
+                queues=0=@a,1=@b,2=@c,3=@d \
+                -- --id=@a create queue other-config:priority=1 \
+                -- --id=@b create queue other-config:priority=2 \
+                -- --id=@c create queue other-config:priority=50 other-config:min-rate=1000 \
+                -- --id=@d create queue other-config:priority=150 other-config:min-rate=100000').splitlines()[0]
 for link in net.links:
     print("link: {} <-> {}".format(link.intf1.name, link.intf2.name))
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf1.name, qos_id))
