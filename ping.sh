@@ -14,11 +14,5 @@ else
 fi
 
 echo "ping latency" > stats.csv
-python ping.py ${TARGET} ${PORT} >> stats.csv &
-echo "ping latency" > stats2.csv
-python ping.py ${TARGET} 10024 >> stats2.csv &
-
-echo waiting
-wait
-Rscript graphs.R
-echo done
+python /media/sf_PBL-Project/ping.py ${TARGET} ${PORT} >> stats.csv
+Rscript /media/sf_PBL-Project/graphs.R 
