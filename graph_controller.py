@@ -200,8 +200,8 @@ class ProjectController(app_manager.RyuApp):
         return out_port
 
     def fail_node(self, failed_node):
-    """Removes node from network, deletes all flows from every switch
-    and adds table-miss flow again."""
+        """Removes node from network, deletes all flows from every switch
+        and adds table-miss flow again."""
         if failed_node in self.net:
             self.net.remove_node(failed_node)
         else:
