@@ -199,8 +199,14 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("---------------------\n")
         return out_port
 
-    def flush_all(self):
-    """Deletes all flows from every switch and adds table-miss flow again."""
+    def fail_node(self, failed_node):
+    """Removes node from network, deletes all flows from every switch
+    and adds table-miss flow again."""
+        if failed_node in self.net:
+            self.net.remove_node(failed_node)
+        else:
+            self.logger.info("Node {} was already removed... dropping!".format(failed_node))
+            return
         for datapath in self.datapaths:
             self.remove_flows(datapath)
             ofproto = datapath.ofproto
@@ -269,44 +275,24 @@ class ProjectController(app_manager.RyuApp):
         # use certain destination IPs to 'detect'/simulate switch failure
         if dst == '10.0.0.11':
             # simulate switch failure s1
-            if 1 in self.net:
-                self.net.remove_node(1)
-                self.flush_all()
-                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
-                return
-            else:
-                self.logger.info("Node 1 was already removed... dropping!")
-                return
+            self.fail_node(1)
+            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            return
         elif dst == '10.0.0.22':
             # simulate switch failure s2
-            if 2 in self.net:
-                self.net.remove_node(2)
-                self.flush_all()
-                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
-                return
-            else:
-                self.logger.info("Node 2 was already removed... dropping!")
-                return
+            self.fail_node(2)
+            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            return
         elif dst == '10.0.0.33':
             # simulate switch failure s3
-            if 3 in self.net:
-                self.net.remove_node(3)
-                self.flush_all()
-                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
-                return
-            else:
-                self.logger.info("Node 3 was already removed... dropping!")
-                return
+            self.fail_node(3)
+            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            return
         elif dst == '10.0.0.44':
             # simulate switch failure s4
-            if 4 in self.net:
-                self.net.remove_node(4)
-                self.flush_all()
-                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
-                return
-            else:
-                self.logger.info("Node 4 was already removed... dropping!")
-                return
+            self.fail_node(4)
+            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            return
         else:
             # possibly do link failure as well
             pass
