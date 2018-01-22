@@ -43,7 +43,7 @@ class ProjectController(app_manager.RyuApp):
         """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
-        self.slice_ports = [5004, 10022] # video and latency TODO third slice
+        self.slice_ports = [5004, 10022,10023] # video and latency TODO third slice
         self.slice_protocols = [17, 6] # UDP and TCP
         self.VIDEO_QUEUE = 0
         self.LATENCY_QUEUE = 1
