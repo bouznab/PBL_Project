@@ -43,12 +43,8 @@ class ProjectController(app_manager.RyuApp):
         """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
-<<<<<<< HEAD
-        self.slice_ports = [5004, 10022,10023] # video and latency TODO third slice
-=======
         self.datapaths = []
         self.slice_ports = [5004, 10022, 10023] # video, latency, mission critical voip
->>>>>>> master
         self.slice_protocols = [17, 6] # UDP and TCP
         # set all to 0 for no slicing (only default queue is used)
         self.VIDEO_QUEUE = 0
@@ -58,28 +54,13 @@ class ProjectController(app_manager.RyuApp):
         self.net = nx.DiGraph()
         for i in range(4):
             self.net.add_node(self.hosts[i])
-<<<<<<< HEAD
-            self.net.add_edge(i+1, self.hosts[i], port=2, weight=0, video=0, latency=0,audio=0)
-            self.net.add_edge(self.hosts[i], i+1, weight=0, video=0, latency=0,audio=0)
-=======
             self.net.add_edge(i+1, self.hosts[i], port=2, weight=0, video=0, latency=0, mission_critical=0)
             self.net.add_edge(self.hosts[i], i+1, weight=0, video=0, latency=0, mission_critical=0)
->>>>>>> master
 
         self.net.add_node(1)
         self.net.add_node(2)
         self.net.add_node(3)
         self.net.add_node(4)
-<<<<<<< HEAD
-        self.net.add_edge(1, 2, port=3, weight=2, video=2, latency=2,audio=2)
-        self.net.add_edge(2, 1, port=4, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(2, 3, port=3, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(3, 2, port=4, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(3, 4, port=3, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(4, 3, port=4, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(4, 1, port=3, weight=1, video=1, latency=1,audio=1)
-        self.net.add_edge(1, 4, port=4, weight=1, video=1, latency=1,audio=1)
-=======
         # set different weights for static slicing based on link properties
         self.net.add_edge(1, 2, port=3, weight=1, video=1, latency=1, mission_critical=1)
         self.net.add_edge(2, 1, port=4, weight=1, video=1, latency=1, mission_critical=1)
@@ -89,7 +70,6 @@ class ProjectController(app_manager.RyuApp):
         self.net.add_edge(4, 3, port=4, weight=1, video=1, latency=1, mission_critical=1)
         self.net.add_edge(4, 1, port=3, weight=1, video=1, latency=1, mission_critical=1)
         self.net.add_edge(1, 4, port=4, weight=1, video=1, latency=1, mission_critical=1)
->>>>>>> master
         self.logger.info("**********ProjectController __init__")
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -210,8 +190,6 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("---------------------\n")
         return out_port
 
-<<<<<<< HEAD
-=======
     def fail_node(self, failed_node):
         """Removes node from network, deletes all flows from every switch
         and adds table-miss flow again."""
@@ -250,7 +228,6 @@ class ProjectController(app_manager.RyuApp):
             match=match, instructions=instructions)
         datapath.send_msg(mod)
 
->>>>>>> master
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         """packet_in_handler is called whenever a flow does not have a matching
@@ -284,8 +261,6 @@ class ProjectController(app_manager.RyuApp):
         except Exception:
             self.logger.error("ERROR:\n{} is not an IPv4-Packet! Dropping..\n".format(pkt))
             return
-<<<<<<< HEAD
-=======
 
         # use certain destination IPs to 'detect'/simulate switch failure
         if dst == '10.0.0.11':
@@ -312,7 +287,6 @@ class ProjectController(app_manager.RyuApp):
             # possibly do link failure as well
             pass
 
->>>>>>> master
         try:
             dst_port = pkt.protocols[2].dst_port
         except Exception:
@@ -323,13 +297,8 @@ class ProjectController(app_manager.RyuApp):
         if src not in self.net:
             self.logger.info("ERROR: adding {} to graph".format(src))
             self.net.add_node(src)
-<<<<<<< HEAD
-            self.net.add_edge(dpid, src, port=in_port, weight=0, video=0, latency=0,audio=0)
-            self.net.add_edge(src, dpid, weight=0, video=0, latency=0,audio=0)
-=======
             self.net.add_edge(dpid, src, port=in_port, weight=0, video=0, latency=0, mission_critical=0)
             self.net.add_edge(src, dpid, weight=0, video=0, latency=0, mission_critical=0)
->>>>>>> master
 
         if protocol in self.slice_protocols and dst_port in self.slice_ports:
             if dst_port == 5004:
@@ -351,11 +320,7 @@ class ProjectController(app_manager.RyuApp):
                 self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.AUDIO_QUEUE))
                 out_port = self.add_slice(datapath=datapath, ipv4_src=src,
                                       ipv4_dst=dst, dst_port=dst_port,
-<<<<<<< HEAD
-                                      weight='audio',
-=======
                                       weight='mission_critical',
->>>>>>> master
                                       queue_id=self.AUDIO_QUEUE,
                                       protocol=protocol, of_priority=3)
             # add broadcast use switch with in_port==2 to set TTL
