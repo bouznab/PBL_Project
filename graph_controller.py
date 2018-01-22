@@ -43,6 +43,7 @@ class ProjectController(app_manager.RyuApp):
         """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
+        self.datapaths = []
         self.slice_ports = [5004, 10022] # video and latency TODO third slice
         self.slice_protocols = [17, 6] # UDP and TCP
         self.VIDEO_QUEUE = 0
@@ -59,7 +60,7 @@ class ProjectController(app_manager.RyuApp):
         self.net.add_node(2)
         self.net.add_node(3)
         self.net.add_node(4)
-        self.net.add_edge(1, 2, port=3, weight=2, video=2, latency=2)
+        self.net.add_edge(1, 2, port=3, weight=1, video=1, latency=1)
         self.net.add_edge(2, 1, port=4, weight=1, video=1, latency=1)
         self.net.add_edge(2, 3, port=3, weight=1, video=1, latency=1)
         self.net.add_edge(3, 2, port=4, weight=1, video=1, latency=1)
@@ -83,6 +84,7 @@ class ProjectController(app_manager.RyuApp):
         #     msg.datapath_id, msg.n_buffers, msg.n_tables, msg.auxiliary_id, msg.capabilities))
         self.logger.info("Setting table-miss flow entry.")
         datapath = ev.msg.datapath
+        self.datapaths.append(datapath)
         dpid = datapath.id
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -123,7 +125,11 @@ class ProjectController(app_manager.RyuApp):
 
     def add_slice(self, datapath, ipv4_src, ipv4_dst, dst_port, weight, queue_id, protocol, of_priority):
         dpid = datapath.id
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
+        try:
+            path = nx.shortest_path(self.net, dpid, ipv4_dst, weight=weight)
+        except Exception:
+            self.logger.info("In add_slice, NO SHORTEST PATH to dst: {}".format(ipv4_dst))
+            return None
         if dpid in path:
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
@@ -135,6 +141,10 @@ class ProjectController(app_manager.RyuApp):
                                      ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                      actions=actions, priority=of_priority,
                                      protocol=protocol)
+            if dst_port == 5004 and out_port == 2:
+                # increase video weight!
+                pass
+
             return out_port
         else:
             self.logger.info("ERROR: Switch {} called add_slice but packet is not on shortest path!".format(dpid))
@@ -149,7 +159,11 @@ class ProjectController(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight")
+        try:
+            path = nx.shortest_path(self.net, dpid, ipv4_dst, weight="weight")
+        except Exception:
+            self.logger.info("NO PATH TO DST: {}".format(ipv4_dst))
+            return None
         if dpid in path:
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
@@ -181,6 +195,37 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("---------------------\n")
         return out_port
 
+    def flush_all(self):
+        for datapath in self.datapaths:
+            self.remove_table_flows(datapath)
+            ofproto = datapath.ofproto
+            parser = datapath.ofproto_parser
+            match = parser.OFPMatch()
+            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                              ofproto.OFPCML_NO_BUFFER)]
+            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                                 actions)]
+            mod = datapath.ofproto_parser.OFPFlowMod(
+                datapath=datapath, match=match, cookie=0,
+                command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
+                priority=0, instructions=inst)
+            datapath.send_msg(mod)
+
+    def remove_table_flows(self, datapath):
+        """Create OFP flow mod message to remove flows from table."""
+        self.logger.info("in delete all rules! dpid:{}".format(datapath.id))
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        match = parser.OFPMatch()
+        instructions = []
+        mod = parser.OFPFlowMod(
+            datapath, cookie=0, cookie_mask=0, table_id=0,
+            command=ofproto.OFPFC_DELETE, idle_timeout=0, hard_timeout=0,
+            priority=1, buffer_id=ofproto.OFPCML_NO_BUFFER,
+            out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY, flags=0,
+            match=match, instructions=instructions)
+        datapath.send_msg(mod)
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         """Packets with UDP-dst-port 5004 and 10022 have special flows added
@@ -210,6 +255,50 @@ class ProjectController(app_manager.RyuApp):
         except Exception:
             self.logger.error("ERROR:\n{} is not an IPv4-Packet! Dropping..\n".format(pkt))
             return
+        if dst == '10.0.0.11':
+            # simulate switch failure s1
+            if 1 in self.net:
+                self.net.remove_node(1)
+                self.flush_all()
+                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+                return
+            else:
+                self.logger.info("Node 1 was already removed... dropping!")
+                return
+        elif dst == '10.0.0.22':
+            # simulate switch failure s2
+            if 2 in self.net:
+                self.net.remove_node(2)
+                self.flush_all()
+                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+                return
+            else:
+                self.logger.info("Node 2 was already removed... dropping!")
+                return
+        elif dst == '10.0.0.33':
+            # simulate switch failure s3
+            if 3 in self.net:
+                self.net.remove_node(3)
+                self.flush_all()
+                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+                return
+            else:
+                self.logger.info("Node 3 was already removed... dropping!")
+                return
+        elif dst == '10.0.0.44':
+            # simulate switch failure s4
+            if 4 in self.net:
+                self.net.remove_node(4)
+                self.flush_all()
+                #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+                return
+            else:
+                self.logger.info("Node 4 was already removed... dropping!")
+                return
+        else:
+            # possibly do link failure as well
+            pass
+
         try:
             dst_port = pkt.protocols[2].dst_port
         except Exception:
@@ -257,8 +346,8 @@ class ProjectController(app_manager.RyuApp):
                                               ipv4_src=src,
                                               ipv4_dst=dst)
         if out_port is None:
-            self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
-            out_port = ofproto.OFPP_FLOOD
+            self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\nDropping...\n".format(dpid, pkt))
+            return
 
         actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
         out = datapath.ofproto_parser.OFPPacketOut(
