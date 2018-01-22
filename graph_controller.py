@@ -47,6 +47,7 @@ class ProjectController(app_manager.RyuApp):
         self.slice_protocols = [17, 6] # UDP and TCP
         self.VIDEO_QUEUE = 0
         self.LATENCY_QUEUE = 1
+        self.AUDIO_QUEUE = 2
 
         self.net = nx.DiGraph()
         for i in range(4):
@@ -237,6 +238,15 @@ class ProjectController(app_manager.RyuApp):
                                           weight='latency',
                                           queue_id=self.LATENCY_QUEUE,
                                           protocol=protocol, of_priority=3)
+              # chao'work
+            elif dst_port == 10023:
+                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.AUDIO_QUEUE))
+                out_port = self.add_slice(datapath=datapath, ipv4_src=src,
+                                      ipv4_dst=dst, dst_port=dst_port,
+                                      weight='latency',
+                                      queue_id=self.AUDIO_QUEUE,
+                                      protocol=protocol, of_priority=3)
+
 
         # add broadcast use switch with in_port==2 to set TTL
         # add multicast (not sure how yet)
