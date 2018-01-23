@@ -145,10 +145,10 @@ class ProjectController(app_manager.RyuApp):
                 # because weight was increased
                 pass
 
-            return out_port
+            return (out_port, queue_id)
         else:
             self.logger.info("ERROR: Switch {} called add_slice but packet is not on shortest path!".format(dpid))
-            return None
+            return (None, self.DEFAULT_QUEUE)
 
     def add_base_flow(self, datapath, ipv4_src, ipv4_dst):
         """Used for non-special traffic, adds a flow based on 'weight'
@@ -168,7 +168,7 @@ class ProjectController(app_manager.RyuApp):
                 datapath.ofproto_parser.OFPActionOutput(out_port)]
         else:
             self.logger.info("ERROR: Switch {} got a packet but is not in the shortest path!".format(dpid))
-            return None
+            return (None, self.DEFAULT_QUEUE)
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = datapath.ofproto_parser.OFPFlowMod(
@@ -189,7 +189,7 @@ class ProjectController(app_manager.RyuApp):
                                          actions=actions, priority=2,
                                          protocol=protocol)
         self.logger.info("---------------------\n")
-        return out_port
+        return (out_port, self.DEFAULT_QUEUE)
 
     def fail_node(self, failed_node):
         """Removes node from network, deletes all flows from every switch
@@ -251,6 +251,7 @@ class ProjectController(app_manager.RyuApp):
         ipv4_handle = pkt.get_protocol(ipv4.ipv4)
         dpid = datapath.id
         out_port = None
+        queue_id = self.DEFAULT_QUEUE
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
@@ -304,35 +305,35 @@ class ProjectController(app_manager.RyuApp):
         if protocol in self.slice_protocols and dst_port in self.slice_ports:
             if dst_port == 5004:
                 self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.VIDEO_QUEUE))
-                out_port =self.add_slice(datapath=datapath, ipv4_src=src,
-                                         ipv4_dst=dst, dst_port=dst_port,
-                                         weight='video',
-                                         queue_id=self.VIDEO_QUEUE,
-                                         protocol=protocol, of_priority=3)
+                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
+                                                    ipv4_dst=dst, dst_port=dst_port,
+                                                    weight='video',
+                                                    queue_id=self.VIDEO_QUEUE,
+                                                    protocol=protocol, of_priority=3)
             elif dst_port == 10022:
                 self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.LATENCY_QUEUE))
-                out_port = self.add_slice(datapath=datapath, ipv4_src=src,
-                                          ipv4_dst=dst, dst_port=dst_port,
-                                          weight='latency',
-                                          queue_id=self.LATENCY_QUEUE,
-                                          protocol=protocol, of_priority=3)
+                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
+                                                    ipv4_dst=dst, dst_port=dst_port,
+                                                    weight='latency',
+                                                    queue_id=self.LATENCY_QUEUE,
+                                                    protocol=protocol, of_priority=3)
               # chao'work
             elif dst_port == 10023:
                 self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.CRITICAL_QUEUE))
-                out_port = self.add_slice(datapath=datapath, ipv4_src=src,
-                                      ipv4_dst=dst, dst_port=dst_port,
-                                      weight='mission_critical',
-                                      queue_id=self.CRITICAL_QUEUE,
-                                      protocol=protocol, of_priority=3)
+                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
+                                                    ipv4_dst=dst, dst_port=dst_port,
+                                                    weight='mission_critical',
+                                                    queue_id=self.CRITICAL_QUEUE,
+                                                    protocol=protocol, of_priority=3)
             # add broadcast use switch with in_port==2 to set TTL
             # add multicast (not sure how yet)
 
         else:
             # non-special traffic!
             if dst in self.net and out_port is None:
-                out_port = self.add_base_flow(datapath=datapath,
-                                              ipv4_src=src,
-                                              ipv4_dst=dst)
+                out_port, queue_id = self.add_base_flow(datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst)
             else:
                 self.logger.info("{} not known to controller, dropping ..".format(dst))
                 return
@@ -340,7 +341,10 @@ class ProjectController(app_manager.RyuApp):
             self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
             out_port = ofproto.OFPP_FLOOD
 
-        actions = [datapath.ofproto_parser.OFPActionOutput(out_port)]
+        actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
+                   datapath.ofproto_parser.OFPActionOutput(out_port)]
+        #actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=self.DEFAULT_QUEUE),
+        #           datapath.ofproto_parser.OFPActionOutput(out_port)]
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions)
