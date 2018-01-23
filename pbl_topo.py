@@ -97,6 +97,19 @@ for link in net.links:
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf2.name, qos_id))
 
 CLI(net)
+from random import randint
+down = randint(1, 4)
+i = 1
+for sw in net.switches:
+    if i == down:
+        print("Stopping Switch {}!".format(down))
+        print("ping -c1 10.0.0.{}{}".format(down, down))
+        net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(down, down))
+        sw.stop()
+        break
+    i += 1
+
+CLI(net)
 
 for sw in net.switches:
     sw.cmd('ovs-vsctl -- --all destroy QoS -- --all destroy Queue')

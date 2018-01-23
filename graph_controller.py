@@ -48,6 +48,9 @@ class ProjectController(app_manager.RyuApp):
         self.slice_protocols = [17, 6] # UDP and TCP
         # set all to 0 for no slicing (only default queue is used)
         self.DEFAULT_QUEUE = 0
+        # the video queue can either be the same as default to use it as noise
+        # or we use queue_id=1 to show that different video traffic can be
+        # prioritized and have a min-rate or something
         self.VIDEO_QUEUE = 0
         self.LATENCY_QUEUE = 2
         self.CRITICAL_QUEUE = 3
@@ -83,6 +86,7 @@ class ProjectController(app_manager.RyuApp):
         #     msg.datapath_id, msg.n_buffers, msg.n_tables, msg.auxiliary_id, msg.capabilities))
         self.logger.info("Setting table-miss flow entry.")
         datapath = ev.msg.datapath
+        self.datapaths.append(datapath)
         dpid = datapath.id
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -195,6 +199,7 @@ class ProjectController(app_manager.RyuApp):
         """Removes node from network, deletes all flows from every switch
         and adds table-miss flow again."""
         if failed_node in self.net:
+            self.logger.info("Removing node {} from self.net".format(failed_node))
             self.net.remove_node(failed_node)
         else:
             self.logger.info("Node {} was already removed... dropping!".format(failed_node))
