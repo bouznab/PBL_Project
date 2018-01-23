@@ -1,8 +1,8 @@
 #!/bin/bash
 # FIRST ARGUMENT: TARGET IP
-# SECOND ARGUMENT: ABSOLUTE PATH VIDEO
+# SECOND ARGUMENT: TARGET UDP-Port
+# THIRD ARGUMENT: ABSOLUTE PATH FILE
 
-TARGET=$1
 if [ -z "$1" ]
 then
     TARGET='10.0.0.3'
@@ -11,12 +11,18 @@ else
 fi
 if [ -z "$2" ]
 then
-    VIDEO='/home/virt/host_share/PBL_Project/example.avi'
+    PORT=5004
 else
-    VIDEO=$2
+    PORT=$2
+fi
+if [ -z "$3" ]
+then
+    FILE='/home/virt/host_share/PBL_Project/example.avi'
+else
+    FILE=$3
 fi
 
-FIRST='#rtp{access=udp,mux=ts,dst='
-LAST=',port=5004}'
+CONF="#rtp{access=udp,mux=ts,dst=${TARGET},port=${PORT}}"
 
-vlc-wrapper -vvv file://${VIDEO} --sout ${FIRST}${TARGET}${LAST} :sout-all
+
+vlc-wrapper -vvv file://${FILE} --sout ${CONF} :sout-all
