@@ -34,6 +34,7 @@ from ryu.app.wsgi import ControllerBase
 from ryu.topology import event, switches
 
 import networkx as nx
+import copy
 
 
 class ProjectController(app_manager.RyuApp):
@@ -43,6 +44,10 @@ class ProjectController(app_manager.RyuApp):
         """Initialize the Graph representing our test-topology."""
         super(ProjectController, self).__init__(*args, **kwargs)
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
+        self.slices = dict()
+        self.slices[5004] = set()
+        self.slices[10022] = set()
+        self.slices[10023] = set() # elemts will be tuples (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, path, of_priority)
         self.datapaths = []
         self.slice_ports = [5004, 10022, 10023] # video, latency, mission critical voip
         self.slice_protocols = [17, 6] # UDP and TCP
@@ -108,13 +113,13 @@ class ProjectController(app_manager.RyuApp):
                 eth_type=ether_types.ETH_TYPE_IP, ip_proto=protocol, udp_dst=dst_port,
                 ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
 
-            self.logger.info("\nAdding UDP flow:\nmatch:{}\nactions={}\n".format(match, actions))
+            self.logger.info("\nAdding UDP flow: switch {}\nmatch:{}\nactions={}\n".format(datapath.id, match, actions))
         elif protocol == 6:
             match = datapath.ofproto_parser.OFPMatch(
                 eth_type=ether_types.ETH_TYPE_IP, ip_proto=protocol, tcp_dst=dst_port,
                 ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+            self.logger.info("\nAdding TCP flow: switch {}\nmatch:{}\nactions={}\n".format(datapath.id, match, actions))
 
-            self.logger.info("\nAdding TCP flow:\nmatch:{}\nactions={}\n".format(match, actions))
         else:
             self.logger.info("ERROR: Protocol {} not supported!".format(protocol))
             return
@@ -125,12 +130,16 @@ class ProjectController(app_manager.RyuApp):
             priority=priority, instructions=inst)
         datapath.send_msg(mod)
 
-    def add_slice(self, datapath, ipv4_src, ipv4_dst, dst_port, weight, queue_id, protocol, of_priority):
+    def add_slice(self, datapath, ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, of_priority):
         """Calculate the shortest path based on 'weight', then add the
         necessary flow-entry with the correct out_port and the correct
         'queue_id' for this slice."""
         dpid = datapath.id
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
+        try:
+            path = nx.shortest_path(self.net, dpid, ipv4_dst, weight=weight)
+        except Exception:
+            self.logger.info("ERROR add_slice: {} to {} no shortest_path".format(dpid, ipv4_dst))
+            return (None, self.DEFAULT_QUEUE)
         if dpid in path:
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
@@ -148,7 +157,17 @@ class ProjectController(app_manager.RyuApp):
                 # high packet rate -> different paths are chosen every time
                 # because weight was increased
                 pass
-
+            try:
+                path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
+            except Exception:
+                self.logger.info("ERROR add_slice2: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
+                return (None, self.DEFAULT_QUEUE)
+            if dpid in path:
+                self.logger.info("\n\nADDING:\n{}\n".format((ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)))
+                try:
+                    self.slices[dst_port].add((ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority))
+                except KeyError:
+                    self.logger.info("{} not in self.slices!".format(dst_port))
             return (out_port, queue_id)
         else:
             self.logger.info("ERROR: Switch {} called add_slice but packet is not on shortest path!".format(dpid))
@@ -163,7 +182,12 @@ class ProjectController(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         match = datapath.ofproto_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
-        path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight="weight")
+        try:
+            path = nx.shortest_path(self.net, dpid, ipv4_dst, weight="weight")
+        except Exception:
+            self.logger.info("ERROR add_base_flow: {} to {} no shortest_path".format(dpid, ipv4_dst))
+            return (None, self.DEFAULT_QUEUE)
+
         if dpid in path:
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
@@ -234,6 +258,68 @@ class ProjectController(app_manager.RyuApp):
             match=match, instructions=instructions)
         datapath.send_msg(mod)
 
+    def repolpulate_switches(self, failed_node):
+        iter_dict = copy.deepcopy(self.slices)
+        for port, sl_set in iter_dict.iteritems():
+            tmp = set(sl_set)
+            for sl in sl_set:
+                if (failed_node == sl[6][1]) or (failed_node == sl[6][-2]):
+                    self.logger.info("Removing {}".format(sl))
+                    tmp.remove(sl)
+            self.slices[port] = tmp
+        port = 10023
+        tmp = set(self.slices[port])
+        for sl in self.slices[port]:
+            self.logger.info("-------")
+            if failed_node in sl[6]:
+                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                tmp.remove(sl)
+            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
+            tmp.add(self.recalc_slice(sl))
+        self.slices[port] = tmp
+        port = 10022
+        tmp = set(self.slices[port])
+        for sl in self.slices[port]:
+            self.logger.info("-------")
+            if failed_node in sl[6]:
+                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                tmp.remove(sl)
+            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
+            tmp.add(self.recalc_slice(sl))
+        self.slices[port] = tmp
+
+        port = 5004
+        tmp = set(self.slices[port])
+        for sl in self.slices[port]:
+            self.logger.info("-------")
+            if failed_node in sl[6]:
+                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                tmp.remove(sl)
+            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
+            tmp.add(self.recalc_slice(sl))
+        self.slices[port] = tmp
+
+    def recalc_slice(self, sl):
+        ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, path, of_priority = sl
+        try:
+            path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
+        except Exception:
+            self.logger.info("ERROR recalc_slice: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
+            return
+        for datapath in self.datapaths:
+            dpid = datapath.id
+            if dpid in path:
+                next = path[path.index(dpid) + 1]
+                out_port = self.net[dpid][next]['port']
+                actions = [
+                    datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
+                    datapath.ofproto_parser.OFPActionOutput(out_port)]
+                self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
+                                         ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                         actions=actions, priority=of_priority,
+                                         protocol=protocol)
+        return (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         """packet_in_handler is called whenever a flow does not have a matching
@@ -288,6 +374,7 @@ class ProjectController(app_manager.RyuApp):
         elif dst == '10.0.0.44':
             # simulate switch failure s4
             self.fail_node(4)
+            self.repolpulate_switches(4)
             #self.recalculate_paths()-> repopulate automatically? or let switches ask again
             return
         else:
@@ -343,8 +430,8 @@ class ProjectController(app_manager.RyuApp):
                 self.logger.info("{} not known to controller, dropping ..".format(dst))
                 return
         if out_port is None:
-            self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n".format(dpid, pkt))
-            out_port = ofproto.OFPP_FLOOD
+            self.logger.info("\nERROR: NO FLOWS ADDED!!! SWITCH {} : pkt: \n{}\n\nDROPPING..!".format(dpid, pkt))
+            return
 
         actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
                    datapath.ofproto_parser.OFPActionOutput(out_port)]

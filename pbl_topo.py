@@ -101,10 +101,11 @@ from random import randint
 down = randint(1, 4)
 i = 1
 for sw in net.switches:
-    if i == down:
-        print("Stopping Switch {}!".format(down))
-        print("ping -c1 10.0.0.{}{}".format(down, down))
-        net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(down, down))
+    #if i == down:
+    if i == 4:
+        print("Stopping Switch {}!".format(i))
+        sw.stop()
+        net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(i, i))
         sw.stop()
         break
     i += 1
