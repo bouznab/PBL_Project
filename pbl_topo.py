@@ -47,11 +47,6 @@ net.addLink(s3, s4, port1=3, port2=4)
 net.addLink(s4, s1, port1=3, port2=4)
 
 net.build()
-# c0.start()
-# s1.start([c0])
-# s2.start([c0])
-# s3.start([c0])
-# s4.start([c0])
 net.start()
 h1.setMAC("10:10:10:10:10:11")
 h2.setMAC("10:10:10:10:10:12")
@@ -67,19 +62,16 @@ for h in [h1, h2, h3, h4]:
     h.setARP(ip="10.0.0.33", mac="33:33:33:33:33:33")
     h.setARP(ip="10.0.0.44", mac="44:44:44:44:44:44")
 
-
+print("disable ipv6..")
 for h in net.hosts:
-    #print "disable ipv6"
     h.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
     h.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
     h.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
 
 for sw in net.switches:
-    #print "disable ipv6"
     sw.cmd("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
     sw.cmd("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
     sw.cmd("sysctl -w net.ipv6.conf.lo.disable_ipv6=1")
-
 
 ################################ Change this line so that slicing.py (or whatever controller) can be imported by ryu-manager and adjust the log-file ###########
 #result = c0.cmd("bash -c \"ryu-manager graph_controller.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
@@ -91,25 +83,27 @@ qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=80000
                 -- --id=@b create queue other-config:priority=2 \
                 -- --id=@c create queue other-config:priority=50 other-config:min-rate=1000 \
                 -- --id=@d create queue other-config:priority=150 other-config:min-rate=100000').splitlines()[0]
+print("Setting QoS queues for all links..")
 for link in net.links:
-    print("link: {} <-> {}".format(link.intf1.name, link.intf2.name))
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf1.name, qos_id))
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf2.name, qos_id))
 
+print("Done")
 CLI(net)
 from random import randint
 down = randint(1, 4)
 i = 1
 for sw in net.switches:
     #if i == down:
+    print("NOT RANDOM right now, always STOP SWITCH 4 FOR DEBUGGING!")
     if i == 4:
         print("Stopping Switch {}!".format(i))
         sw.stop()
         net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(i, i))
-        sw.stop()
         break
     i += 1
 
+print("Resuming..")
 CLI(net)
 
 for sw in net.switches:

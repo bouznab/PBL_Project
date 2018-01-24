@@ -49,7 +49,6 @@ class ProjectController(app_manager.RyuApp):
         self.slices[10022] = set()
         self.slices[10023] = set() # elemts will be tuples (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, path, of_priority)
         self.datapaths = []
-        self.slice_ports = [5004, 10022, 10023] # video, latency, mission critical voip
         self.slice_protocols = [17, 6] # UDP and TCP
         # set all to 0 for no slicing (only default queue is used)
         self.DEFAULT_QUEUE = 0
@@ -87,8 +86,6 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("\n-----------switch_features_handler is called")
 
         msg = ev.msg
-        # self.logger.info('OFPSwitchFeatures received: datapath_id=0x%016x n_buffers=%d n_tables=%d auxiliary_id=%d capabilities=0x%08x' % (
-        #     msg.datapath_id, msg.n_buffers, msg.n_tables, msg.auxiliary_id, msg.capabilities))
         self.logger.info("Setting table-miss flow entry.")
         datapath = ev.msg.datapath
         self.datapaths.append(datapath)
@@ -163,9 +160,11 @@ class ProjectController(app_manager.RyuApp):
                 self.logger.info("ERROR add_slice2: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
                 return (None, self.DEFAULT_QUEUE)
             if dpid in path:
-                self.logger.info("\n\nADDING:\n{}\n".format((ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)))
                 try:
-                    self.slices[dst_port].add((ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority))
+                    sl = (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)
+                    if sl not in self.slices[dst_port]:
+                        self.logger.info("\nADDING:{}\n".format(sl))
+                        self.slices[dst_port].add(sl)
                 except KeyError:
                     self.logger.info("{} not in self.slices!".format(dst_port))
             return (out_port, queue_id)
@@ -211,7 +210,7 @@ class ProjectController(app_manager.RyuApp):
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
         self.logger.info("Adding callback rules for higher slice packets.")
         for protocol in self.slice_protocols:
-            for dst_port in self.slice_ports:
+            for dst_port in self.slices:
                 self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
                                          ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                          actions=actions, priority=2,
@@ -230,6 +229,7 @@ class ProjectController(app_manager.RyuApp):
             return
         for datapath in self.datapaths:
             self.remove_flows(datapath)
+            # set table miss again
             ofproto = datapath.ofproto
             parser = datapath.ofproto_parser
             match = parser.OFPMatch()
@@ -259,33 +259,42 @@ class ProjectController(app_manager.RyuApp):
         datapath.send_msg(mod)
 
     def repolpulate_switches(self, failed_node):
+        """Send all necessary rules to all switches to reestablish existing
+        flows with new routes. Impossible flows will be removed."""
+        # copy dictionary for save iteration
         iter_dict = copy.deepcopy(self.slices)
+        # remove all slices with src or dst node unreachable from the self.slices dict
         for port, sl_set in iter_dict.iteritems():
             tmp = set(sl_set)
             for sl in sl_set:
-                if (failed_node == sl[6][1]) or (failed_node == sl[6][-2]):
-                    self.logger.info("Removing {}".format(sl))
+                if (failed_node == sl[6][1]) or (failed_node == sl[6][-2]): # unreachable
+                    self.logger.info("Permanently removing {} because host h{} became unreachable!".format(sl, failed_node))
                     tmp.remove(sl)
             self.slices[port] = tmp
+        # reestablish existing slices based on new topology
+        # do it in the order of priority 10023, 10022, 5004
         port = 10023
         tmp = set(self.slices[port])
         for sl in self.slices[port]:
             self.logger.info("-------")
             if failed_node in sl[6]:
-                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                self.logger.info("\nRerouting:\n{}".format(sl))
                 tmp.remove(sl)
-            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
-            tmp.add(self.recalc_slice(sl))
+            new_slice = self.reestablish_slice(sl)
+            if new_slice not in tmp:
+                tmp.add(new_slice)
         self.slices[port] = tmp
+
         port = 10022
         tmp = set(self.slices[port])
         for sl in self.slices[port]:
             self.logger.info("-------")
             if failed_node in sl[6]:
-                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                self.logger.info("\nRerouting:\n{}".format(sl))
                 tmp.remove(sl)
-            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
-            tmp.add(self.recalc_slice(sl))
+            new_slice = self.reestablish_slice(sl)
+            if new_slice not in tmp:
+                tmp.add(new_slice)
         self.slices[port] = tmp
 
         port = 5004
@@ -293,18 +302,21 @@ class ProjectController(app_manager.RyuApp):
         for sl in self.slices[port]:
             self.logger.info("-------")
             if failed_node in sl[6]:
-                self.logger.info("\nRemove was called for slice:\n{}".format(sl))
+                self.logger.info("\nRerouting:\n{}".format(sl))
                 tmp.remove(sl)
-            self.logger.info("\nRecalculate was called for slice:\n{}".format(sl))
-            tmp.add(self.recalc_slice(sl))
+            new_slice = self.reestablish_slice(sl)
+            if new_slice not in tmp:
+                tmp.add(new_slice)
         self.slices[port] = tmp
 
-    def recalc_slice(self, sl):
+    def reestablish_slice(self, sl):
+        """Reestablish an existing slice(-flow) by recalculating the shortest
+        path and sending all necessary rules to the switches along the path."""
         ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, path, of_priority = sl
         try:
             path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
         except Exception:
-            self.logger.info("ERROR recalc_slice: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
+            self.logger.info("ERROR reestablish_slice: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
             return
         for datapath in self.datapaths:
             dpid = datapath.id
@@ -358,23 +370,35 @@ class ProjectController(app_manager.RyuApp):
         # use certain destination IPs to 'detect'/simulate switch failure
         if dst == '10.0.0.11':
             # simulate switch failure s1
-            self.fail_node(1)
-            self.repolpulate_switches(1)
+            sw = 1
+            self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
+            self.fail_node(sw)
+            self.repolpulate_switches(sw)
+            self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.22':
             # simulate switch failure s2
-            self.fail_node(2)
-            self.repolpulate_switches(2)
+            sw = 2
+            self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
+            self.fail_node(sw)
+            self.repolpulate_switches(sw)
+            self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.33':
             # simulate switch failure s3
-            self.fail_node(3)
-            self.repolpulate_switches(3)
+            sw = 3
+            self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
+            self.fail_node(sw)
+            self.repolpulate_switches(sw)
+            self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.44':
             # simulate switch failure s4
-            self.fail_node(4)
-            self.repolpulate_switches(4)
+            sw = 4
+            self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
+            self.fail_node(sw)
+            self.repolpulate_switches(sw)
+            self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         else:
             # possibly do link failure as well
@@ -393,7 +417,7 @@ class ProjectController(app_manager.RyuApp):
             self.net.add_edge(dpid, src, port=in_port, weight=0, video=0, latency=0, mission_critical=0)
             self.net.add_edge(src, dpid, weight=0, video=0, latency=0, mission_critical=0)
 
-        if protocol in self.slice_protocols and dst_port in self.slice_ports:
+        if protocol in self.slice_protocols and dst_port in self.slices:
             if dst_port == 5004:
                 self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.VIDEO_QUEUE))
                 out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
@@ -434,9 +458,8 @@ class ProjectController(app_manager.RyuApp):
 
         actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
                    datapath.ofproto_parser.OFPActionOutput(out_port)]
-        #actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=self.DEFAULT_QUEUE),
-        #           datapath.ofproto_parser.OFPActionOutput(out_port)]
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions)
         datapath.send_msg(out)
+        self.logger.info("___________________________packet_in is over\n")
