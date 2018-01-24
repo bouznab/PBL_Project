@@ -209,7 +209,7 @@ class ProjectController(app_manager.RyuApp):
 
         # add additional flows to make sure the switch asks the controller again
         # for special packets
-        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
         self.logger.info("Adding callback rules for higher slice packets.")
         for protocol in self.slice_protocols:
             for dst_port in self.slices:
@@ -331,8 +331,7 @@ class ProjectController(app_manager.RyuApp):
                 self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
                                          ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                          actions=actions, priority=of_priority,
-                                         protocol=protocol,
-                                         buffer_id=ofproto.OFP_NO_BUFFER)
+                                         protocol=protocol)
         return (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -467,5 +466,6 @@ class ProjectController(app_manager.RyuApp):
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
             actions=actions, data=data)
         datapath.send_msg(out)
+        self.logger.info("out={}".format(out))
         self.logger.info("TIME elapsed in controller: {}s".format(time.clock() - t1))
         self.logger.info("___________________________packet_in is over\n")
