@@ -144,6 +144,20 @@ class ProjectController(app_manager.RyuApp):
                 datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
                 datapath.ofproto_parser.OFPActionOutput(out_port)]
 
+            try:
+                src_path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
+                sl = (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(src_path), of_priority)
+                if sl not in self.slices[dst_port]:
+                    self.logger.info("\nADDING NEW SLICE-FLOW: ipv4_src={}, ipv4_dst={}, protocol={}, dst_port={},\nqueue_id={}, weight={}\ntuple(path)={}, of_priority={}\n".format(*sl))
+                    self.slices[dst_port].add(sl)
+                else:
+                    self.logger.info("Adding already started slice-flow {} to switch {}".format(sl, dpid))
+            except KeyError:
+                self.logger.info("{} not in self.slices!".format(dst_port))
+            except Exception:
+                self.logger.info("ERROR add_slice2: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
+                return (None, self.DEFAULT_QUEUE)
+
             self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
                                      ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                      actions=actions, priority=of_priority,
@@ -154,19 +168,6 @@ class ProjectController(app_manager.RyuApp):
                 # high packet rate -> different paths are chosen every time
                 # because weight was increased
                 pass
-            try:
-                path = nx.shortest_path(self.net, ipv4_src, ipv4_dst, weight=weight)
-            except Exception:
-                self.logger.info("ERROR add_slice2: {} to {} no shortest_path".format(ipv4_src, ipv4_dst))
-                return (None, self.DEFAULT_QUEUE)
-            if dpid in path:
-                try:
-                    sl = (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)
-                    if sl not in self.slices[dst_port]:
-                        self.logger.info("\nADDING:{}\n".format(sl))
-                        self.slices[dst_port].add(sl)
-                except KeyError:
-                    self.logger.info("{} not in self.slices!".format(dst_port))
             return (out_port, queue_id)
         else:
             self.logger.info("ERROR: Switch {} called add_slice but packet is not on shortest path!".format(dpid))
@@ -419,14 +420,12 @@ class ProjectController(app_manager.RyuApp):
 
         if protocol in self.slice_protocols and dst_port in self.slices:
             if dst_port == 5004:
-                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.VIDEO_QUEUE))
                 out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
                                                     ipv4_dst=dst, dst_port=dst_port,
                                                     weight='video',
                                                     queue_id=self.VIDEO_QUEUE,
                                                     protocol=protocol, of_priority=3)
             elif dst_port == 10022:
-                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.LATENCY_QUEUE))
                 out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
                                                     ipv4_dst=dst, dst_port=dst_port,
                                                     weight='latency',
@@ -434,7 +433,6 @@ class ProjectController(app_manager.RyuApp):
                                                     protocol=protocol, of_priority=3)
               # chao'work
             elif dst_port == 10023:
-                self.logger.info("Adding slice: Protocol={} Dst_Port={} Queue={}".format(protocol, dst_port, self.CRITICAL_QUEUE))
                 out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
                                                     ipv4_dst=dst, dst_port=dst_port,
                                                     weight='mission_critical',

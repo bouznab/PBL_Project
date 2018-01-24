@@ -90,12 +90,13 @@ for link in net.links:
 
 print("Done")
 CLI(net)
+
 from random import randint
 down = randint(1, 4)
+print("NOT RANDOM right now, always STOP SWITCH 4 FOR DEBUGGING!")
 i = 1
 for sw in net.switches:
     #if i == down:
-    print("NOT RANDOM right now, always STOP SWITCH 4 FOR DEBUGGING!")
     if i == 4:
         print("Stopping Switch {}!".format(i))
         sw.stop()
