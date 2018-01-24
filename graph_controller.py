@@ -35,6 +35,7 @@ from ryu.topology import event, switches
 
 import networkx as nx
 import copy
+import time
 
 
 class ProjectController(app_manager.RyuApp):
@@ -254,12 +255,12 @@ class ProjectController(app_manager.RyuApp):
         mod = parser.OFPFlowMod(
             datapath, cookie=0, cookie_mask=0, table_id=0,
             command=ofproto.OFPFC_DELETE, idle_timeout=0, hard_timeout=0,
-            priority=1, buffer_id=ofproto.OFPCML_NO_BUFFER,
+            priority=1, buffer_id=ofproto.OFP_NO_BUFFER,
             out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY, flags=0,
             match=match, instructions=instructions)
         datapath.send_msg(mod)
 
-    def repolpulate_switches(self, failed_node):
+    def repopulate_switches(self, failed_node):
         """Send all necessary rules to all switches to reestablish existing
         flows with new routes. Impossible flows will be removed."""
         # copy dictionary for save iteration
@@ -330,7 +331,8 @@ class ProjectController(app_manager.RyuApp):
                 self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
                                          ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                          actions=actions, priority=of_priority,
-                                         protocol=protocol)
+                                         protocol=protocol,
+                                         buffer_id=ofproto.OFP_NO_BUFFER)
         return (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, tuple(path), of_priority)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
@@ -346,7 +348,7 @@ class ProjectController(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         self.logger.info("**********_packet_in_handler\nSWITCH {}\n".format(datapath.id))
-
+        t1 = time.clock()
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         in_port = msg.match['in_port']
@@ -374,7 +376,7 @@ class ProjectController(app_manager.RyuApp):
             sw = 1
             self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
             self.fail_node(sw)
-            self.repolpulate_switches(sw)
+            self.repopulate_switches(sw)
             self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.22':
@@ -382,7 +384,7 @@ class ProjectController(app_manager.RyuApp):
             sw = 2
             self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
             self.fail_node(sw)
-            self.repolpulate_switches(sw)
+            self.repopulate_switches(sw)
             self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.33':
@@ -390,7 +392,7 @@ class ProjectController(app_manager.RyuApp):
             sw = 3
             self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
             self.fail_node(sw)
-            self.repolpulate_switches(sw)
+            self.repopulate_switches(sw)
             self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         elif dst == '10.0.0.44':
@@ -398,7 +400,7 @@ class ProjectController(app_manager.RyuApp):
             sw = 4
             self.logger.info("---------FAILURE HANDLING switch {}---------".format(sw))
             self.fail_node(sw)
-            self.repolpulate_switches(sw)
+            self.repopulate_switches(sw)
             self.logger.info("---------FAILURE HANDLING OVER---------")
             return
         else:
@@ -456,8 +458,14 @@ class ProjectController(app_manager.RyuApp):
 
         actions = [datapath.ofproto_parser.OFPActionSetQueue(queue_id=queue_id),
                    datapath.ofproto_parser.OFPActionOutput(out_port)]
+
+        # make sure data is not lost if packet is not buffered at switch!
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
         out = datapath.ofproto_parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
-            actions=actions)
+            actions=actions, data=data)
         datapath.send_msg(out)
+        self.logger.info("TIME elapsed in controller: {}s".format(time.clock() - t1))
         self.logger.info("___________________________packet_in is over\n")
