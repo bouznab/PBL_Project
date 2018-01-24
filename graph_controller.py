@@ -359,23 +359,22 @@ class ProjectController(app_manager.RyuApp):
         if dst == '10.0.0.11':
             # simulate switch failure s1
             self.fail_node(1)
-            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            self.repolpulate_switches(1)
             return
         elif dst == '10.0.0.22':
             # simulate switch failure s2
             self.fail_node(2)
-            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            self.repolpulate_switches(2)
             return
         elif dst == '10.0.0.33':
             # simulate switch failure s3
             self.fail_node(3)
-            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
+            self.repolpulate_switches(3)
             return
         elif dst == '10.0.0.44':
             # simulate switch failure s4
             self.fail_node(4)
             self.repolpulate_switches(4)
-            #self.recalculate_paths()-> repopulate automatically? or let switches ask again
             return
         else:
             # possibly do link failure as well
