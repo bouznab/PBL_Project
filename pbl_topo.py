@@ -76,13 +76,14 @@ for sw in net.switches:
 ################################ Change this line so that slicing.py (or whatever controller) can be imported by ryu-manager and adjust the log-file ###########
 #result = c0.cmd("bash -c \"ryu-manager graph_controller.py>&2 2>/home/virt/host_share/PBL_Project/ryu.out &\"")
 
-## Configure Priority queues in ovs-switch
-qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=800000 \
+# Configure Priority queues in ovs-switch
+# 0=DEFAULT+VIDEO, 1=MULTICAST, 2=LATENCY, 3=MISSION_CRITICAL
+qos_id = s1.cmd('ovs-vsctl create qos type=linux-htb other-config:max-rate=1000000 \
                 queues=0=@a,1=@b,2=@c,3=@d \
-                -- --id=@a create queue other-config:priority=1 \
-                -- --id=@b create queue other-config:priority=2 \
+                -- --id=@a create queue other-config:priority=1 other-config:max-rate=800000 \
+                -- --id=@b create queue other-config:priority=2 other-config:min-rate=200000 \
                 -- --id=@c create queue other-config:priority=50 other-config:min-rate=1000 \
-                -- --id=@d create queue other-config:priority=150 other-config:min-rate=100000').splitlines()[0]
+                -- --id=@d create queue other-config:priority=150 other-config:min-rate=200000').splitlines()[0]
 print("Setting QoS queues for all links..")
 for link in net.links:
     s1.cmd('ovs-vsctl set Port %s qos=%s' % (link.intf1.name, qos_id))
