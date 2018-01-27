@@ -2,7 +2,6 @@
 
 import matplotlib.pyplot as plt 
 import matplotlib.animation as animation
-import numpy as np
 
 fig = plt.figure()
 ax1 = fig.add_subplot(1,1,1)
@@ -16,10 +15,10 @@ def animate(i):
     for line in lines:
         if len(line) > 1:
             x,y = line.split(' ')
+            y = float(y)
             if int(x) < 25:
                 xs.append(x)
                 ys.append(y)
-                print "{} {}".format(x,y)
             else:
                 ys.pop(0)
                 ys.append(y)

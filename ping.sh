@@ -8,17 +8,22 @@ else
 fi
 if [ -z "$2" ]
 then
-    PORT=10022
+    PORT1=10022
 else
-    PORT=$2
+    PORT1=$2
+fi
+if [ -z "$3" ]
+then
+    PORT2=10024
+else 
+    PORT2=$3
 fi
 
 echo "ping latency port" > stats.csv
-python ping.py ${TARGET} ${PORT} >> stats.csv &
-echo "ping latency port" > stats2.csv
-python ping.py ${TARGET} 10024 >> stats2.csv &
+python ping.py ${TARGET} ${PORT1} ${PORT2} 2>> stats.csv &
 
 echo waiting
 wait
+sed -i '2d' stats.csv
 Rscript graphs.R
 echo done
