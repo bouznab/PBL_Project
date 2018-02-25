@@ -1,5 +1,5 @@
 #!/bin/bash
-# FIRST ARGUMENT: target IP
+# FIRST ARGUMENT: target PORT
 # SECOND ARGUMENT: time interval
 
 

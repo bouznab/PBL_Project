@@ -19,11 +19,9 @@ else
     PORT2=$3
 fi
 
-# TODO change Rscript to use only one file
-rm *.csv
 
 echo "ping latency port" > stats.csv
-python ping.py ${TARGET} ${PORT1} ${PORT2} 2>> stats.csv &
+python ping.py ${TARGET} ${PORT1} ${PORT2} >> stats.csv &
 
 echo waiting
 wait
