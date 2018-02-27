@@ -60,6 +60,10 @@ class ProjectController(app_manager.RyuApp):
         ############################################
 
         self.hosts = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']
+        self.block_dict = {(3, '10.0.0.1'): 2,
+                           (4, '10.0.0.2'): 3,
+                           (1, '10.0.0.3'): 4,
+                           (2, '10.0.0.4'): 1}
         # self.slices is a dictionary that will hold all existing slice flows,
         # keys are the destination-ports, values are sets of slices as seen below
         self.slices = dict()
@@ -149,6 +153,11 @@ class ProjectController(app_manager.RyuApp):
         else:
             self.logger.info("ERROR: Protocol {} not supported!".format(protocol))
             return
+        self.add_any_flow(datapath, match, actions, priority)
+
+    def add_any_flow(self, datapath, match, actions, priority):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         mod = parser.OFPFlowMod(
             datapath=datapath, match=match, cookie=0,
@@ -192,6 +201,71 @@ class ProjectController(app_manager.RyuApp):
                                  ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
                                  actions=actions, priority=of_priority,
                                  protocol=protocol)
+        return (out_port, queue_id)
+
+    # Chao's work
+    def add_broadcast_slice(self, in_port, datapath, ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, of_priority):
+        """Calculate the shortest path based on custom weight, then add the
+        necessary flow-entry with the correct out_port and the correct
+        'queue_id' for this slice."""
+        dpid = datapath.id
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        out_port = ofproto.OFPP_FLOOD
+        if in_port == 2:
+            actions = [
+                parser.OFPActionSetNwTtl(nw_ttl=3),
+                parser.OFPActionSetQueue(queue_id=queue_id),
+                parser.OFPActionOutput(out_port)]
+        else:
+            if (dpid, ipv4_src) in self.block_dict and self.block_dict[(dpid, ipv4_src)] in self.net:
+                match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,
+                                        ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                        in_port=4)
+                actions = []
+                self.add_any_flow(datapath=datapath, actions=actions, match=match,
+                                  priority=of_priority+1)
+                out_port = 2  # don't send it to blocked switch, only to the host
+            actions = [
+                parser.OFPActionDecNwTtl(),
+                parser.OFPActionSetQueue(queue_id=queue_id),
+                parser.OFPActionOutput(out_port)]
+
+        self.add_port_based_flow(datapath=datapath, dst_port=dst_port,
+                                 ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                 actions=actions, priority=of_priority,
+                                 protocol=protocol)
+        return (out_port, queue_id)
+
+    def add_base_broadcast(self, in_port, datapath, ipv4_src, ipv4_dst):
+        dpid = datapath.id
+        queu_id = self.DEFAULT_QUEUE
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        out_port = ofproto.OFPP_FLOOD
+        if in_port == 2:
+            actions = [
+                parser.OFPActionSetNwTtl(nw_ttl=3),
+                parser.OFPActionSetQueue(queue_id=queue_id),
+                parser.OFPActionOutput(out_port)]
+        else:
+            if (dpid, ipv4_src) in self.block_dict and self.block_dict[(dpid, ipv4_src)] in self.net:
+                match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,
+                                        ipv4_src=ipv4_src, ipv4_dst=ipv4_dst,
+                                        in_port=4)
+                actions = []
+                self.add_any_flow(datapath=datapath, actions=actions, match=match,
+                                  priority=of_priority+1)
+                out_port = 2  # don't send it to blocked switch
+            actions = [
+                parser.OFPActionDecNwTtl(),
+                parser.OFPActionSetQueue(queue_id=queue_id),
+                parser.OFPActionOutput(out_port)]
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,
+                                ipv4_src=ipv4_src, ipv4_dst=ipv4_dst)
+        self.add_any_flow(datapath=datapath, actions=actions, match=match,
+                          priority=of_priority+1)
         return (out_port, queue_id)
 
     def add_base_flow(self, datapath, ipv4_src, ipv4_dst):
@@ -458,24 +532,67 @@ class ProjectController(app_manager.RyuApp):
 
         if protocol in self.slice_protocols and dst_port in self.slices:
             if dst_port == 5004:
-                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
-                                                    ipv4_dst=dst, dst_port=dst_port,
-                                                    weight='video',
-                                                    queue_id=self.VIDEO_QUEUE,
-                                                    protocol=protocol, of_priority=3)
+                if dst == "10.255.255.255":
+                    out_port, queue_id = self.add_broadcast_slice(
+                                                        in_port=in_port,
+                                                        datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst,
+                                                        dst_port=dst_port,
+                                                        weight='video',
+                                                        queue_id=self.VIDEO_QUEUE,
+                                                        protocol=protocol,
+                                                        of_priority=3)
+                else:
+                    out_port, queue_id = self.add_slice(datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst,
+                                                        dst_port=dst_port,
+                                                        weight='video',
+                                                        queue_id=self.VIDEO_QUEUE,
+                                                        protocol=protocol,
+                                                        of_priority=3)
             elif dst_port == 10022:
-                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
-                                                    ipv4_dst=dst, dst_port=dst_port,
-                                                    weight='latency',
-                                                    queue_id=self.LATENCY_QUEUE,
-                                                    protocol=protocol, of_priority=3)
+                if dst == "10.255.255.255":
+                    self.logger.info("TRY TO ADD BROADCAST 10022")
+                    out_port, queue_id = self.add_broadcast_slice(
+                                                        in_port=in_port,
+                                                        datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst,
+                                                        dst_port=dst_port,
+                                                        weight='latency',
+                                                        queue_id=self.LATENCY_QUEUE,
+                                                        protocol=protocol,
+                                                        of_priority=3)
+                else:
+                    out_port, queue_id = self.add_slice(datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst,
+                                                        dst_port=dst_port,
+                                                        weight='latency',
+                                                        queue_id=self.LATENCY_QUEUE,
+                                                        protocol=protocol,
+                                                        of_priority=3)
               # chao'work
             elif dst_port == 10023:
-                out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
-                                                    ipv4_dst=dst, dst_port=dst_port,
-                                                    weight='mission_critical',
-                                                    queue_id=self.CRITICAL_QUEUE,
-                                                    protocol=protocol, of_priority=3)
+                if dst == "10.255.255.255":
+                    out_port, queue_id = self.add_broadcast_slice(
+                                                        in_port=in_port,
+                                                        datapath=datapath,
+                                                        ipv4_src=src,
+                                                        ipv4_dst=dst,
+                                                        dst_port=dst_port,
+                                                        weight='mission_critical',
+                                                        queue_id=self.CRITICAL_QUEUE,
+                                                        protocol=protocol,
+                                                        of_priority=3)
+                else:
+                    out_port, queue_id = self.add_slice(datapath=datapath, ipv4_src=src,
+                                                        ipv4_dst=dst, dst_port=dst_port,
+                                                        weight='mission_critical',
+                                                        queue_id=self.CRITICAL_QUEUE,
+                                                        protocol=protocol, of_priority=3)
             # add broadcast on port 10000: idea: use switch with in_port==2 to set TTL=3,
             # because this is always the entry to the loop
             # so something like 'if in_port==2: self.set_TTL_and_flood()' should do the trick
@@ -511,9 +628,15 @@ class ProjectController(app_manager.RyuApp):
         else:
             # non-special traffic!
             if dst in self.net and out_port is None:
-                out_port, queue_id = self.add_base_flow(datapath=datapath,
-                                                        ipv4_src=src,
-                                                        ipv4_dst=dst)
+                if dst == "10.255.255.255":
+                    out_port, queue_id = self.add_base_broadcast(
+                        datapath=datapath,
+                        ipv4_src=src,
+                        ipv4_dst=dst)
+                else:
+                    out_port, queue_id = self.add_base_flow(datapath=datapath,
+                                                            ipv4_src=src,
+                                                            ipv4_dst=dst)
             else:
                 self.logger.info("{} not known to controller, dropping ..".format(dst))
                 return
