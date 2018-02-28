@@ -5,10 +5,10 @@ from time import *
 import sys
 import argparse
 import threading
-import netifaces 
+import netifaces
 
 ipToMac = {"10.0.0.1":"10:10:10:10:10:11","10.0.0.2":"10:10:10:10:10:12",
-        "10.0.0.3":"10:10:10:10:10:13","10.0.0.4":"10:10:10:10:10:14"}
+        "10.0.0.3":"10:10:10:10:10:13","10.0.0.4":"10:10:10:10:10:14", "10.255.255.255":"ff:ff:ff:ff:ff:ff"}
 
 
 class pingThread(threading.Thread):
