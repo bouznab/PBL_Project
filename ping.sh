@@ -2,26 +2,45 @@
 
 if [ -z "$1" ]
 then
-    TARGET='10.0.0.4'
+    TIME=100
 else
-    TARGET=$1
+    TIME=$1
 fi
 if [ -z "$2" ]
 then
-    PORT1=10022
+    TARGET='10.0.0.4'
 else
-    PORT1=$2
+    TARGET=$2
 fi
 if [ -z "$3" ]
 then
+    PORT1=10022
+else 
+    PORT1=$3
+fi
+if [ -z "$4" ]
+then
     PORT2=10024
 else 
-    PORT2=$3
+    PORT2=$4
+fi
+if [ -z "$5" ]
+then
+    PORT3=''
+else 
+    PORT3=$5
+fi
+if [ -z "$6" ]
+then
+    PORT4=''
+else 
+    PORT4=$6
 fi
 
+echo ${PORT4}
 
 echo "ping latency port" > stats.csv
-python ping.py ${TARGET} ${PORT1} ${PORT2} >> stats.csv &
+python ping.py -t ${TIME} -i ${TARGET} -p ${PORT1} ${PORT2} ${PORT3} ${PORT4} 2>> stats.csv &
 
 echo waiting
 wait

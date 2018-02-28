@@ -18,7 +18,8 @@ def animate(i):
             x,y,port = line.split(' ')
             y = float(y)
             port = int(port)
-            if int(x) < 25:
+            x = int(x)
+            if x < 25:
                 if x not in xs:
                     xs.append(x)
                 if port == 10022:
