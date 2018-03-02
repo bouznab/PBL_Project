@@ -587,13 +587,8 @@ class ProjectController(app_manager.RyuApp):
             # check for last three digits in port and use them as destinations:
             # so when h1 wants to multicast to h2 and h3 it will use UDP-Port 11023
             dst = None # destinations are implied by dst_port
-            dst_list = []
-            for digit in str(dst_port)[2:]:
-                tmp_dst = "10.0.0.{}".format(digit)
-                if tmp_dst in self.hosts and tmp_dst not in dst_list:
-                        dst_list.append(tmp_dst)
-            self.logger.info("GOT MULTICAST with src:{} and dst_list={}".format(src, dst_list))
-            self.add_multicast_flows(msg, src, dst_list)
+            self.logger.info("GOT MULTICAST with src:{} and dst_port={}".format(src, dst_port))
+            self.add_multicast_flows(msg, src, dst_port)
             return
             # now you have a list of destinations and can figure out how to send them
             # the data (they listen on UDP-port 10001) assume that traffic is only in one direction
@@ -646,7 +641,12 @@ class ProjectController(app_manager.RyuApp):
         self.logger.info("TIME elapsed in controller: {}s".format(time.clock() - t1))
         self.logger.info("___________________________packet_in is over\n")
 
-    def add_multicast_flows(self, msg, src, dst_list):
+    def add_multicast_flows(self, msg, src, dst_port):
+        dst_list = []
+        for digit in str(dst_port)[2:]:
+            tmp_dst = "10.0.0.{}".format(digit)
+            if tmp_dst in self.hosts and tmp_dst not in dst_list:
+                    dst_list.append(tmp_dst)
         datapath = msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -672,7 +672,10 @@ class ProjectController(app_manager.RyuApp):
         except KeyError:
             pass
         for dst in ambiguous:
-            next_ports[3].remove(dst)
+            if len(next_ports[3]) < len(next_ports[4]):
+                next_ports[3].remove(dst)
+            else:
+                next_ports[4].remove(dst)
 
         actions = []
         for out_port, destinations in next_ports.items():
@@ -686,6 +689,8 @@ class ProjectController(app_manager.RyuApp):
             else:
                 # calculate new port like 11023
                 udp_port = "11"
+                if len(destinations) == 0:
+                    continue
                 for dst in destinations:
                     udp_port += dst.split(".")[-1]
                 while len(udp_port) < 5:
@@ -694,6 +699,11 @@ class ProjectController(app_manager.RyuApp):
                     [parser.OFPActionSetQueue(queue_id=self.MULTICAST_QUEUE),
                      parser.OFPActionSetField(udp_dst=int(udp_port)),
                      parser.OFPActionOutput(out_port)])
+        match = parser.OFPMatch(
+            eth_type=ether_types.ETH_TYPE_IP, ip_proto=17, udp_dst=dst_port,
+            ipv4_src=src)
+        self.add_any_flow(datapath, match, actions, priority=3)
+
 
         self.logger.info("actions: {}".format(actions))
         data = None
