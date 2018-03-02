@@ -1,25 +1,11 @@
 #!/usr/bin/env python
 # coding:utf-8
 
-# The following License is from an example switch implentation that Chao found,
+# Disclaimer:
+# There is some code from an example switch implentation that Chao found,
 # We only use the main idea of having a graph representation of the network and
 # the mechanism to figure out the next out_port as marked in the code. Some other
 # parts like the table-miss entry are standards that are found in any ryu app
-
-# Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 
 from ryu.base import app_manager
@@ -69,9 +55,9 @@ class ProjectController(app_manager.RyuApp):
         self.slices = dict()
         # elements  of these sets will be slice-flows represented as
         # tuples: (ipv4_src, ipv4_dst, protocol, dst_port, queue_id, weight, path, of_priority)
-        self.slices[5004] = set()
-        self.slices[10022] = set()
-        self.slices[10023] = set()
+        self.slices[5004] = set()   # video
+        self.slices[10022] = set()  # latency
+        self.slices[10023] = set()  # mission_critical
         # save datapaths of all switches to be able to send them FlowMods
         self.datapaths = []
         # define what protocols are supported: UDP=17 and TCP=6
@@ -593,12 +579,11 @@ class ProjectController(app_manager.RyuApp):
                                                         weight='mission_critical',
                                                         queue_id=self.CRITICAL_QUEUE,
                                                         protocol=protocol, of_priority=3)
-            # add broadcast on port 10000: idea: use switch with in_port==2 to set TTL=3,
-            # because this is always the entry to the loop
-            # so something like 'if in_port==2: self.set_TTL_and_flood()' should do the trick
+            else:
+                pass
         elif protocol in self.slice_protocols and dst_port in range(11000, 11444):
-            # add multicast:
-            # assume that you have a src and a list of destinations like so:
+            # multicast:
+            # generate a list of destination ips from the dest port
             # check for last three digits in port and use them as destinations:
             # so when h1 wants to multicast to h2 and h3 it will use UDP-Port 11023
             dst = None # destinations are implied by dst_port
@@ -608,6 +593,8 @@ class ProjectController(app_manager.RyuApp):
                 if tmp_dst in self.hosts and tmp_dst not in dst_list:
                         dst_list.append(tmp_dst)
             self.logger.info("GOT MULTICAST with src:{} and dst_list={}".format(src, dst_list))
+            self.add_multicast_flows(msg, src, dst_list)
+            return
             # now you have a list of destinations and can figure out how to send them
             # the data (they listen on UDP-port 10001) assume that traffic is only in one direction
             # and for simplicity there is only one multicast going on in the network and only UDP:
@@ -658,3 +645,63 @@ class ProjectController(app_manager.RyuApp):
         # self.logger.info("out={}".format(out))
         self.logger.info("TIME elapsed in controller: {}s".format(time.clock() - t1))
         self.logger.info("___________________________packet_in is over\n")
+
+    def add_multicast_flows(self, msg, src, dst_list):
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        dpid = datapath.id
+        self.logger.info("add_multicast_flows was called with: {src}, {dst}".format(src=src, dst=dst_list))
+        next_ports = dict()
+        for dst in dst_list:
+            shortest_paths = list(nx.all_shortest_paths(self.net, dpid , dst, "weight"))
+            for path in shortest_paths:
+                next = path[path.index(dpid) + 1]           # this and all reoccurences
+                out_port = self.net[dpid][next]['port']
+                if out_port in next_ports:
+                    next_ports[out_port].add(dst)
+                else:
+                    next_ports[out_port] = {dst}
+        # now we have a dictionary with every next output port and the corresponding
+        # destinations, it is still possible that one destination is reachable
+        # through multiple output ports!
+        ambiguous = set()
+        try:
+            ambiguous = next_ports[3].intersection(next_ports[4])
+            self.logger.info("ambiguous destinations: {}".format(ambiguous))
+        except KeyError:
+            pass
+        for dst in ambiguous:
+            next_ports[3].remove(dst)
+
+        actions = []
+        for out_port, destinations in next_ports.items():
+            if len(destinations) == 1:
+                dst = destinations.pop()
+                actions.extend(
+                    [parser.OFPActionSetQueue(queue_id=self.MULTICAST_QUEUE),
+                     parser.OFPActionSetField(ipv4_dst=dst),
+                     parser.OFPActionSetField(udp_dst=10001),
+                     parser.OFPActionOutput(out_port)])
+            else:
+                # calculate new port like 11023
+                udp_port = "11"
+                for dst in destinations:
+                    udp_port += dst.split(".")[-1]
+                while len(udp_port) < 5:
+                    udp_port += "0"
+                actions.extend(
+                    [parser.OFPActionSetQueue(queue_id=self.MULTICAST_QUEUE),
+                     parser.OFPActionSetField(udp_dst=int(udp_port)),
+                     parser.OFPActionOutput(out_port)])
+
+        self.logger.info("actions: {}".format(actions))
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
+        in_port = msg.match['in_port']
+        out = parser.OFPPacketOut(
+            datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
+            actions=actions, data=data)
+        datapath.send_msg(out)
+        self.logger.info("sent packetout")
