@@ -34,7 +34,7 @@ fi
 
 echo "starting iperf3 client"
 
-iperf3 -c ${IP} -p ${PORT} -t ${TIME} -i ${INTERVAL} -w 1M --cport ${PORT} -B ${ClientIP} > iperf_stats_${PORT}.csv
+iperf3 -c ${IP} -p ${PORT} -t ${TIME} -i ${INTERVAL} -w 1M --cport ${PORT} -B ${ClientIP} > iperf_client_${PORT}.csv
 echo "ready to plot"
 # python iperf_data_parser.py iperf_stats_${PORT}.csv
 # Rscript iperfgraphs.R

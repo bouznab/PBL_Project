@@ -1,4 +1,7 @@
 #!/bin/bash
+# FIRST ARGUMENT - time: how many pings are measured, time = 0 -> infinite times
+# SECOND ARGUMENT - ip address of destination host 
+# THIRD ARGUMENT - SIXTH ARGUMENT - ports latency measurement, up to 4 ports, at least 1 port 
 
 if [ -z "$1" ]
 then
@@ -20,7 +23,7 @@ else
 fi
 if [ -z "$4" ]
 then
-    PORT2=10024
+    PORT2=''
 else 
     PORT2=$4
 fi
@@ -45,5 +48,5 @@ python ping.py -t ${TIME} -i ${TARGET} -p ${PORT1} ${PORT2} ${PORT3} ${PORT4} 2>
 echo waiting
 wait
 sed -i '2d' stats.csv
-Rscript graphs.R
+Rscript pinggraphs.R
 echo done

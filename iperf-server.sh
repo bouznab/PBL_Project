@@ -18,4 +18,4 @@ else
     INTERVAL=$2
 fi
 
-iperf3 -s -p ${PORT} -i ${INTERVAL} 
+iperf3 -s -p ${PORT} -i ${INTERVAL} > iperf_server_${PORT}.csv
