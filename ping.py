@@ -9,6 +9,7 @@ import netifaces
 
 ipToMac = {"10.0.0.1":"10:10:10:10:10:11","10.0.0.2":"10:10:10:10:10:12",
         "10.0.0.3":"10:10:10:10:10:13","10.0.0.4":"10:10:10:10:10:14", "10.255.255.255":"ff:ff:ff:ff:ff:ff"}
+slices = {10022:"latency", 10023:"mission-critical"}
 
 
 class pingThread(threading.Thread):
@@ -32,10 +33,13 @@ def ping(host, iface, port =10022):
     packet = Ether(dst=ipToMac[host])/IP(dst=host)/TCP(sport=port, dport=port,flags="S")
     t = 0.0
     t1=time()
-    ans,unans = srp(packet,iface=iface,timeout=15, verbose=0)
+    ans,unans = srp(packet,iface=iface,timeout=6, verbose=0)
     t2=time()
     t+=t2-t1
-    s = '{} {}'.format(t*1000, port)
+    if port in slices:
+        s = '{} {}'.format(t*1000, slices[port])
+    else:
+        s = '{} {}'.format(t*1000, "default")
     return s
 
 

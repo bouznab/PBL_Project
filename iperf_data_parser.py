@@ -2,23 +2,22 @@
 
 from sys import argv 
 
+slices = {10022:"latency", 10023:"mission-critical"}
+
 file = open("iperf_plot1.csv", "w")
-_, type, _ = argv[1].split('_')
-if type == "client":
-    file.write("time throughput retry port\n")
-else:
-    file.write("time throughput port\n")
+file.write("time throughput retry port\n")
 
 argv.pop(0)
 for stats in argv:
     raw_data = open(stats, 'r').read()
     _, _, parts = stats.split('_')
     port, _ = parts.split('.')
-    lines = raw_data.split('\n')
-    if type == "client":
-        del lines[0:3]
+    if int(port) in slices:
+        portname = slices[int(port)]
     else:
-        del lines[0:6]
+        portname = "default"
+    lines = raw_data.split('\n')
+    del lines[0:3]
     lines.pop()
     for line in lines:
         data= []
@@ -28,12 +27,7 @@ for stats in argv:
             if len(word) >= 1:
                 data.append(word)
 
-        print(data)
         time = data[1].split('-')
-        print(len(data))
-        if type == "client":
-            s = "{} {} {} {}\n".format(time[0], data[5], data[7], port)
-        else:
-            s = "{} {}  {}\n".format(time[0], data[5], port)
+        s = "{} {} {} {}\n".format(time[0], data[5], data[7], portname)
 
         file.write(s)

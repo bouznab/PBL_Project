@@ -3,6 +3,8 @@
 # SECOND ARGUMENT PORT
 # THIRD AGRUMENT time interval
 # FORTH ARGUMENT time
+# For the measurements for the report we limited the bandwidth of clients with -b 330K, 
+# so the 2 clients do not interfere with each other
 
 ClientIP=$(hostname -I)
 ClientIP="$(echo  "${ClientIP}" | tr -d '[:space:]')"
@@ -34,7 +36,7 @@ fi
 
 echo "starting iperf3 client"
 
-iperf3 -c ${IP} -p ${PORT} -t ${TIME} -i ${INTERVAL} -w 1M --cport ${PORT} -B ${ClientIP} > iperf_client_${PORT}.csv
+iperf3 -c ${IP} -p ${PORT} -t ${TIME} -i ${INTERVAL} -w 1M --cport ${PORT} -B ${ClientIP} -b 330K > iperf_client_${PORT}.csv
 echo "ready to plot"
 # python iperf_data_parser.py iperf_stats_${PORT}.csv
 # Rscript iperfgraphs.R
