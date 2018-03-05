@@ -18,7 +18,8 @@ for stats in argv:
         portname = "default"
     lines = raw_data.split('\n')
     del lines[0:3]
-    lines.pop()
+    for _ in range(7):
+        lines.pop()
     for line in lines:
         data= []
         words = line.split(' ')

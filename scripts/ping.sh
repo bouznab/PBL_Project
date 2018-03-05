@@ -40,13 +40,12 @@ else
     PORT4=$6
 fi
 
-echo ${PORT4}
 
 echo "ping latency port" > stats.csv
-python ping.py -t ${TIME} -i ${TARGET} -p ${PORT1} ${PORT2} ${PORT3} ${PORT4} 2>> stats.csv &
+python scripts/ping.py -t ${TIME} -i ${TARGET} -p ${PORT1} ${PORT2} ${PORT3} ${PORT4} 2>> stats.csv &
 
 echo waiting
 wait
 sed -i '2d' stats.csv
-Rscript pinggraphs.R
+Rscript scripts/pinggraphs.R
 echo done

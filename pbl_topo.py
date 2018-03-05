@@ -104,7 +104,7 @@ for sw in net.switches:
     if i == 4:
         print("Stopping Switch {}!".format(i))
         sw.stop()
-        #sleep(2)
+        sleep(10)
         net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(i, i))
         break
     i += 1

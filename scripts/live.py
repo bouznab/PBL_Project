@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/bin/env/python
 
 import matplotlib.pyplot as plt 
 import matplotlib.animation as animation
@@ -6,28 +6,32 @@ import matplotlib.animation as animation
 fig = plt.figure()
 ax1 = fig.add_subplot(1,1,1)
 
+slices = {"mission-critical":10023, "latency":10022, "default":10024}
+
 def animate(i):
-    graph_data = open('stats.csv','r').read()
+    graph_data = open('livestats.csv','r').read()
     lines = graph_data.split('\n')
     del lines[0]
     xs=[]
     ys1=[]
     ys2=[]
+    ports =[]
     for line in lines:
         if len(line) > 1:
             x,y,port = line.split(' ')
+            ports.append(port)
             y = float(y)
-            port = int(port)
+            port_num = slices[port]
             x = int(x)
-            if x < 25:
+            if x < 50:
                 if x not in xs:
                     xs.append(x)
-                if port == 10022:
+                if port_num == 10022:
                     ys1.append(y)
                 else:
                     ys2.append(y)
             else:
-                if port == 10022:
+                if port_num == 10022:
                     ys1.pop(0)
                     ys1.append(y)
                 else:
@@ -37,6 +41,7 @@ def animate(i):
     if len(ys1) == len(ys2):
         ax1.clear()
         ax1.plot(xs, ys1, 'b-', xs,ys2, 'r-')
+        ax1.legend(ports)
     
 
 
