@@ -23,9 +23,6 @@ else
     PORT2=$3
 fi
 
-echo ${PORT1}
-echo ${PORT2}
-
 python scripts/ping.py -t 0 -i ${IP} -p ${PORT1} ${PORT2} 2> livestats.csv
 
 rm livestats.csv

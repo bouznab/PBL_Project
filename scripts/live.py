@@ -15,23 +15,27 @@ def animate(i):
     xs=[]
     ys1=[]
     ys2=[]
-    ports =[]
+    ports = []
+    port_nums = []
     for line in lines:
         if len(line) > 1:
             x,y,port = line.split(' ')
-            ports.append(port)
+            if port not in ports:
+                ports.append(port)
             y = float(y)
             port_num = slices[port]
+            if port_num not in port_nums:
+                port_nums.append(port_num)
             x = int(x)
             if x < 50:
                 if x not in xs:
                     xs.append(x)
-                if port_num == 10022:
+                if port_num == port_nums[0]:
                     ys1.append(y)
                 else:
                     ys2.append(y)
             else:
-                if port_num == 10022:
+                if port_num == port_nums[1]:
                     ys1.pop(0)
                     ys1.append(y)
                 else:
