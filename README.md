@@ -1,5 +1,17 @@
 # Problem Based Learning Project WS 17/18
 
+## Startup
+To start the network and the controller you need two terminal windows.
+
+First:
+```
+ryu-manager graph_controller.py
+```
+Second:
+```
+sudo python pbl_topo.py
+```
+
 ## Measuring and Plotting 
 In the subdirectory scripts are several shell- and pythonscripts to help measure and plot the latency of network packets and throughput and losses of iperf3 clients and servers. 
 The commands have to be executed on hosts in the mininet topology, except two specifc commands as stated below. 
@@ -53,14 +65,17 @@ In order to start a video stream you have to start a server and to actually watc
 The video streaming is working with unicast and also with broadcast and mulitcast, as described in the report.
 
 ## Required software
-* a VM for mininet (we used Ubuntu 16.04.)
-* Python (version 2.7.12)
-* native installation of Mininet (version 2.2.2)
+### Essential:
+* a VM with mininet (we used Ubuntu 16.04. with mininet version 2.2.2)
+  * this should include an installation of Open vSwitch (version 2.5.2)
 * ryu (version 4.20)
-* Open vSwitch (version 2.5.2)
+* python modules: networkx (version 2.0)
+### Benchmarking:
+Python modules:
 * scapy (version 2.2.0)
 * matplotlib (version 2.1.2) 
 * netifaces (version 0.10.6)
+
+Other:
 * iperf3 (version 3.4+)
 * R (version 3.2.3) 
-* ... 
