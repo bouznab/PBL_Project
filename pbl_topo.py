@@ -97,14 +97,14 @@ CLI(net)
 
 from random import randint
 down = randint(1, 4)
-print("NOT RANDOM right now, always STOP SWITCH 4 FOR DEBUGGING!")
+#print("NOT RANDOM right now, always STOP SWITCH 4 FOR DEBUGGING!")
 i = 1
 for sw in net.switches:
-    #if i == down:
-    if i == 4:
+    if i == down:
+    #if i == 4:
         print("Stopping Switch {}!".format(i))
         sw.stop()
-        sleep(10)
+        sleep(1)
         net.get("h1").cmd("ping -c1 10.0.0.{}{}".format(i, i))
         break
     i += 1

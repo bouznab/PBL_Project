@@ -6,13 +6,13 @@
 
 if [ -z "$1" ]
 then
-    IP='10.0.0.4'
+    IP='10.0.0.3'
 else
     IP=$1
 fi
 if [ -z "$2" ]
 then
-    PORT1=10022
+    PORT1=10023
 else
     PORT1=$2
 fi

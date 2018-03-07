@@ -45,6 +45,7 @@ def animate(i):
     if len(ys1) == len(ys2):
         ax1.clear()
         ax1.plot(xs, ys1, 'b-', xs,ys2, 'r-')
+        plt.ylabel("Latency [ms]")
         ax1.legend(ports, loc=2)
 
 
